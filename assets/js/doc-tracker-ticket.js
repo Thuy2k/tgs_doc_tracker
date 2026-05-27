@@ -360,7 +360,7 @@
     // ── 5. Intercept submit: cảnh báo nếu có dòng lệch ──────────────────
     var _submitConfirmed = false; // flag tránh check 2 lần sau khi user xác nhận
 
-    // ── Snapshot SKU → docQty (từ Excel fill / Edit load) ────────────────
+    // ── Snapshot SKU → docQty (từ Excel fill / Edit load / AI / DOM scan) ────
     function initDocQtySnapshot() {
         // Khi excel-import / edit-purchase / edit-sale fill .tgs-doc-qty-input,
         // chúng trigger 'tgs:doc_qty_filled' với { sku, qty, source }
@@ -370,16 +370,53 @@
             if (qty <= 0) return;
             var sku = String(info.sku).trim();
             if (!sku) return;
-            // Lấy tên SP từ row hiện tại (nếu có) để hiển thị trong cảnh báo
             var $tr = $(this).closest('tr');
             var name = $tr.find('td:nth-child(2)').text().trim().split('\n')[0].trim();
             _docQtySnapshot[sku] = { qty: qty, name: name || sku, source: info.source || 'unknown' };
             refreshDeletedSkuWarning();
         });
 
+        // CAPTURE TRƯỚC DELETE: dùng mousedown để fire trước click handler xóa row.
+        // Đảm bảo snapshot có row dù event tgs:doc_qty_filled chưa từng fire
+        // (vd: AI fill / fill bằng cách khác không trigger event).
+        $(document).on('mousedown.tgsDocSnapCapture', '.btn-ticket-remove-product', function () {
+            captureRowIntoSnapshot($(this).closest('tr'), 'pre-delete');
+        });
+
         // Khi user xóa dòng → kiểm tra lại snapshot sau khi DOM update
         $(document).on('click', '.btn-ticket-remove-product', function () {
             setTimeout(refreshDeletedSkuWarning, 50);
+        });
+
+        // Quét định kỳ: nếu bất kỳ row nào có .tgs-doc-qty-input > 0 mà chưa có
+        // trong snapshot → thêm vào (an toàn cho các nguồn fill không trigger event).
+        setInterval(captureAllVisibleDocRows, 1500);
+    }
+
+    /**
+     * Đọc 1 row → nếu có sku + doc qty > 0 thì merge vào snapshot.
+     */
+    function captureRowIntoSnapshot($tr, source) {
+        if (!$tr || !$tr.length) return;
+        var sku = String($tr.attr('data-sku') || '').trim();
+        if (!sku) return;
+        var docQty = parseFloat($tr.find('.tgs-doc-qty-input').val()) || 0;
+        if (docQty <= 0) return;
+        if (_docQtySnapshot[sku] && _docQtySnapshot[sku].qty >= docQty) return;
+        var name = $tr.find('td:nth-child(2)').text().trim().split('\n')[0].trim();
+        _docQtySnapshot[sku] = {
+            qty:    docQty,
+            name:   name || sku,
+            source: (_docQtySnapshot[sku] && _docQtySnapshot[sku].source) || source || 'dom-scan',
+        };
+    }
+
+    /**
+     * Quét toàn bộ rows hiện tại (chính + tặng) và đảm bảo snapshot đủ.
+     */
+    function captureAllVisibleDocRows() {
+        $('#ticketProductsTableBody tr[data-sku], #ticketGiftProductsTableBody tr[data-sku]').each(function () {
+            captureRowIntoSnapshot($(this), 'dom-scan');
         });
     }
 
@@ -405,6 +442,37 @@
                     docQty:  snap.qty,
                 });
             }
+        });
+
+        return results;
+    }
+
+    /**
+     * Trả về danh sách SKU dòng mới (user thêm ngoài chứng từ).
+     * Chỉ chạy khi snapshot không rỗng (có nghĩa user đã import chứng từ).
+     * @returns {Array<{sku, name, actualQty}>}
+     */
+    function collectExtraSkus() {
+        var results = [];
+        if (!Object.keys(_docQtySnapshot).length) return results; // không có chứng từ → mọi dòng đều là "thủ công", bỏ qua
+
+        $('#ticketProductsTableBody tr[data-sku], #ticketGiftProductsTableBody tr[data-sku]').each(function () {
+            var $tr = $(this);
+            var sku = String($tr.attr('data-sku') || '').trim();
+            if (!sku) return;
+            if (_docQtySnapshot[sku]) return; // có trong chứng từ → không phải dòng thừa
+
+            var actualQty = parseFloat(
+                $tr.find('.ticket-quantity-input, .ticket-gift-quantity-input').first().val()
+            ) || 0;
+            if (actualQty <= 0) return;
+
+            var name = $tr.find('td:nth-child(2)').text().trim().split('\n')[0].trim();
+            results.push({
+                sku:       sku,
+                name:      name || sku,
+                actualQty: actualQty,
+            });
         });
 
         return results;
@@ -451,14 +519,18 @@
                 return; // cho phép gửi bình thường
             }
 
+            // Đảm bảo snapshot fresh trước khi so sánh
+            captureAllVisibleDocRows();
+
             var mismatches  = collectMismatches();
             var deletedSkus = collectDeletedSkus();
-            if (!mismatches.length && !deletedSkus.length) return;
+            var extraSkus   = collectExtraSkus();
+            if (!mismatches.length && !deletedSkus.length && !extraSkus.length) return;
 
             // Có lệch → chặn và hiện modal xác nhận
             e.preventDefault();
             e.stopImmediatePropagation();
-            showMismatchConfirmModal(mismatches, deletedSkus);
+            showMismatchConfirmModal(mismatches, deletedSkus, extraSkus);
         });
     }
 
@@ -549,8 +621,9 @@
         });
     }
 
-    function showMismatchConfirmModal(mismatches, deletedSkus) {
+    function showMismatchConfirmModal(mismatches, deletedSkus, extraSkus) {
         deletedSkus = deletedSkus || [];
+        extraSkus   = extraSkus   || [];
         var rows = mismatches.map(function (m) {
             var diffClass = m.diff < 0 ? 'text-danger' : 'text-warning';
             var diffText  = (m.diff > 0 ? '+' : '') + m.diff.toFixed(3).replace(/\.?0+$/, '');
@@ -578,6 +651,21 @@
                 + '</tr>';
         }).join('');
 
+        // Thêm các dòng user thêm mới ngoài chứng từ (SL chứng từ = 0, SL thực tế = N)
+        rows += extraSkus.map(function (x) {
+            var diffText = '+' + x.actualQty;
+            return '<tr class="table-info">'
+                + '<td class="text-truncate" style="max-width:200px;">'
+                +   '<i class="bx bx-plus-circle text-info me-1"></i>' + escHtml(x.name)
+                +   ' <span class="badge bg-info text-dark ms-1">Thêm mới</span>'
+                + '</td>'
+                + '<td><code>' + escHtml(x.sku) + '</code></td>'
+                + '<td class="text-center fw-semibold text-muted">0</td>'
+                + '<td class="text-center fw-semibold">' + x.actualQty + '</td>'
+                + '<td class="text-center fw-bold text-info">' + diffText + '</td>'
+                + '</tr>';
+        }).join('');
+
         $('#tgsDocMismatchConfirmList').html(rows);
         bootstrap.Modal.getOrCreateInstance(document.getElementById('tgsDocMismatchConfirmModal')).show();
     }
@@ -588,6 +676,30 @@
             var src = $('#tgsHiddenSoftwareSource').val();
             if (src) {
                 formData.ledger_software_source = src;
+            }
+
+            // Gửi kèm snapshot toàn bộ dòng SP đã được fill từ chứng từ (Excel/AI/Ảnh).
+            // Backend so sánh với items thực tế đã lưu → phát hiện dòng SKU bị xóa
+            // (chấp nhận user thêm dòng mới, nhưng KHÔNG chấp nhận xóa dòng có trong chứng từ).
+            try {
+                // Quét row hiện tại lần cuối để snapshot không bỏ sót
+                // (vd: row vẫn còn trong bảng mà chưa kịp vào snapshot qua event).
+                captureAllVisibleDocRows();
+                var snapshotList = [];
+                Object.keys(_docQtySnapshot).forEach(function (sku) {
+                    var s = _docQtySnapshot[sku] || {};
+                    snapshotList.push({
+                        sku:           String(sku),
+                        product_name:  s.name || sku,
+                        doc_quantity:  parseFloat(s.qty) || 0,
+                        source:        s.source || 'unknown',
+                    });
+                });
+                if (snapshotList.length) {
+                    formData.doc_imported_items = JSON.stringify(snapshotList);
+                }
+            } catch (err) {
+                // không chặn submit nếu có lỗi snapshot
             }
         });
 

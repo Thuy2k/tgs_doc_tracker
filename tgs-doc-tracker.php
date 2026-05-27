@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 // ── Constants ──────────────────────────────────────────────────────────────
 define('TGS_DOC_TRACKER_DIR',     plugin_dir_path(__FILE__));
 define('TGS_DOC_TRACKER_URL',     plugin_dir_url(__FILE__));
-define('TGS_DOC_TRACKER_VERSION', '1.0.2');
+define('TGS_DOC_TRACKER_VERSION', '1.0.4');
 
 // Upload folder name (dưới wp-content/uploads/tgs-doc-tracker/{blog_id}/{YYYY/MM/DD}/)
 define('TGS_DOC_TRACKER_UPLOAD_SUBDIR', 'tgs-doc-tracker');
@@ -198,8 +198,70 @@ class TGS_Doc_Tracker
         // 1. Commit file chứng từ tạm thành vĩnh viễn
         TGS_Doc_Tracker_Upload::commit_temp_files($ledger_id, $ticket_type);
 
+        // ── Common context ─────────────────────────────────────────────
+        $items = (isset($extra_data['items']) && is_array($extra_data['items'])) ? $extra_data['items'] : [];
+
+        // Với phiếu nhập hàng, các dòng sản phẩm nằm ở phiếu con (auto-import).
+        // Truyền child_ledger_id từ hook để truy vấn đúng phiếu.
+        $query_ledger_id = intval($extra_data['child_ledger_id'] ?? $ledger_id);
+
+        $blog_id      = get_current_blog_id();
+        $ticket_code  = sanitize_text_field($extra_data['ticket_code'] ?? '');
+        $user_id      = intval($extra_data['user_id'] ?? get_current_user_id());
+        $now          = current_time('mysql');
+        $disc_table   = $wpdb->prefix . 'local_doc_tracker_discrepancy';
+
+        // Xây URL xem phiếu theo loại phiếu — có filter để các plugin khác mở rộng
+        $type_to_view = apply_filters('tgs_doc_tracker_ticket_detail_view_map', [
+            'purchase'               => 'ticket-purchase-detail',
+            'sale'                   => 'ticket-sale-detail',
+            'return'                 => 'ticket-return-detail',
+            'damage'                 => 'ticket-damage-detail',
+            'internal_export'        => 'ticket-transfer-export-detail',
+            'internal_purchase'      => 'ticket-transfer-import-detail',
+            'internal_return'        => 'ticket-internal-return-detail',
+            'internal_return_receive'=> 'ticket-internal-return-receive-detail',
+        ]);
+        $detail_view = $type_to_view[$ticket_type] ?? null;
+        $ledger_url  = $detail_view
+            ? admin_url('admin.php?page=tgs-shop-management&view=' . $detail_view . '&id=' . $ledger_id)
+            : null;
+
+        // Nguồn phần mềm của phiếu (root/htsoft/thu_kho/...) — đính kèm vào meta để báo cáo lọc theo nguồn
+        $software_source = $extra_data['software_source'] ?? null;
+
+        // Context dùng chung cho các log function (đóng gói để dễ thêm field sau này)
+        $ctx = [
+            'ledger_id'        => $ledger_id,
+            'query_ledger_id'  => $query_ledger_id,
+            'ticket_type'      => $ticket_type,
+            'blog_id'          => $blog_id,
+            'ticket_code'      => $ticket_code,
+            'user_id'          => $user_id,
+            'now'              => $now,
+            'disc_table'       => $disc_table,
+            'ledger_url'       => $ledger_url,
+            'software_source'  => $software_source,
+        ];
+
         // 2. Phát hiện lệch số lượng giữa chứng từ và thực tế
-        $items = $extra_data['items'] ?? [];
+        $this->_log_qty_discrepancies($items, $ctx);
+
+        // 3. Phát hiện dòng SKU bị xóa khỏi danh sách (có trong chứng từ nhưng không có trong phiếu)
+        $this->_log_missing_doc_rows($extra_data, $ctx);
+    }
+
+    /**
+     * Phát hiện và ghi log lệch số lượng (doc vs actual) cho các SKU còn trong phiếu.
+     *
+     * @param array $items Mảng items đã lưu (mỗi item có product_id, doc_quantity).
+     * @param array $ctx   Context: ledger_id, query_ledger_id, ticket_type, blog_id, ticket_code,
+     *                     user_id, now, disc_table, ledger_url, software_source.
+     */
+    private function _log_qty_discrepancies($items, $ctx)
+    {
+        global $wpdb;
+
         if (empty($items) || !is_array($items)) {
             return;
         }
@@ -219,14 +281,10 @@ class TGS_Doc_Tracker
             return; // Không có SL chứng từ → bỏ qua
         }
 
-        // 3. Lấy SL thực tế đã lưu vào local_ledger_item, gộp theo product_id
+        // Lấy SL thực tế đã lưu vào local_ledger_item, gộp theo product_id
         $item_table    = $wpdb->prefix . 'local_ledger_item';
         $product_table = $wpdb->prefix . 'local_product_name';
         $product_ids   = array_keys($doc_qty_map);
-
-        // Với phiếu nhập hàng, các dòng sản phẩm nằm ở phiếu con (auto-import).
-        // Truyền child_ledger_id từ hook để truy vấn đúng phiếu.
-        $query_ledger_id = intval($extra_data['child_ledger_id'] ?? $ledger_id);
 
         // Xây IN-clause an toàn (integer IDs, không cần prepare escape)
         $in_ids  = implode(',', array_map('intval', $product_ids));
@@ -242,36 +300,13 @@ class TGS_Doc_Tracker
                AND li.local_product_name_id IN ({$in_ids})
                AND (li.is_deleted = 0 OR li.is_deleted IS NULL)
              GROUP BY li.local_product_name_id",
-            $query_ledger_id
+            $ctx['query_ledger_id']
         ));
         // phpcs:enable
 
         if (empty($rows)) {
             return;
         }
-
-        // 4. So sánh và ghi lệch
-        $blog_id      = get_current_blog_id();
-        $ticket_code  = sanitize_text_field($extra_data['ticket_code'] ?? '');
-        $user_id      = intval($extra_data['user_id'] ?? get_current_user_id());
-        $now          = current_time('mysql');
-        $disc_table   = $wpdb->prefix . 'local_doc_tracker_discrepancy';
-
-        // Xây URL xem phiếu theo loại phiếu
-        $type_to_view = [
-            'purchase'               => 'ticket-purchase-detail',
-            'sale'                   => 'ticket-sale-detail',
-            'return'                 => 'ticket-return-detail',
-            'damage'                 => 'ticket-damage-detail',
-            'internal_export'        => 'ticket-transfer-export-detail',
-            'internal_purchase'      => 'ticket-transfer-import-detail',
-            'internal_return'        => 'ticket-internal-return-detail',
-            'internal_return_receive'=> 'ticket-internal-return-receive-detail',
-        ];
-        $detail_view = $type_to_view[$ticket_type] ?? null;
-        $ledger_url  = $detail_view
-            ? admin_url('admin.php?page=tgs-shop-management&view=' . $detail_view . '&id=' . $ledger_id)
-            : null;
 
         foreach ($rows as $row) {
             $product_id  = intval($row->product_id);
@@ -283,27 +318,169 @@ class TGS_Doc_Tracker
                 continue; // Không lệch → bỏ qua
             }
 
-            $wpdb->insert($disc_table, [
-                'blog_id'                => $blog_id,
-                'local_ledger_id'        => $ledger_id,
-                'local_ledger_code'      => $ticket_code,
-                'local_product_sku'      => $row->sku ?? '',
-                'local_product_name_text'=> $row->product_name ?? '',
-                'discrepancy_type'       => 'qty',
-                'doc_quantity'           => $doc_qty,
-                'actual_quantity'        => $actual_qty,
-                'quantity_diff'          => $qty_diff,
-                'resolution_status'      => 'pending',
-                'discrepancy_meta'       => json_encode([
-                    'ticket_type' => $ticket_type,
-                    'ledger_url'  => $ledger_url,
-                ], JSON_UNESCAPED_UNICODE),
-                'user_id'                => $user_id,
-                'is_deleted'             => 0,
-                'created_at'             => $now,
-                'updated_at'             => $now,
+            $this->_insert_discrepancy($ctx, [
+                'sku'              => $row->sku ?? '',
+                'product_name'     => $row->product_name ?? '',
+                'discrepancy_type' => 'qty',
+                'doc_quantity'     => $doc_qty,
+                'actual_quantity'  => $actual_qty,
+                'quantity_diff'    => $qty_diff,
+                'meta_extra'       => [],
             ]);
         }
+    }
+
+    /**
+     * So sánh snapshot dòng SP đã fill từ chứng từ (gửi từ UI) với items thực tế đã lưu.
+     * Nếu có SKU trong snapshot nhưng KHÔNG còn dòng trong phiếu → log discrepancy 'missing'.
+     * (Chấp nhận user thêm dòng mới ngoài chứng từ; chỉ cảnh báo khi MẤT DÒNG.)
+     *
+     * @param array $extra_data Payload hook, có key 'doc_imported_items'.
+     * @param array $ctx        Context chung (xem _log_qty_discrepancies).
+     */
+    /**
+     * So sánh snapshot dòng SP đã fill từ chứng từ (gửi từ UI) với items thực tế đã lưu.
+     * - SKU có trong snapshot nhưng KHÔNG còn dòng trong phiếu → log 'missing' (Thiếu dòng).
+     * - SKU có dòng trong phiếu nhưng KHÔNG có trong snapshot → log 'extra' (Thừa dòng).
+     * (Chỉ chạy khi user đã import chứng từ — snapshot không rỗng — để tránh log toàn bộ row
+     * khi user tạo phiếu thủ công không qua chứng từ.)
+     *
+     * @param array $extra_data Payload hook, có key 'doc_imported_items'.
+     * @param array $ctx        Context chung (xem _log_qty_discrepancies).
+     */
+    private function _log_missing_doc_rows($extra_data, $ctx)
+    {
+        global $wpdb;
+
+        $doc_imported = $extra_data['doc_imported_items'] ?? [];
+        if (empty($doc_imported) || !is_array($doc_imported)) {
+            return;
+        }
+
+        // Gom snapshot theo SKU: { sku => { name, doc_qty, sources[] } }
+        $snapshot = [];
+        foreach ($doc_imported as $row) {
+            if (!is_array($row)) continue;
+            $sku = isset($row['sku']) ? trim((string)$row['sku']) : '';
+            if ($sku === '') continue;
+            $qty    = isset($row['doc_quantity']) ? floatval($row['doc_quantity']) : 0;
+            $name   = isset($row['product_name']) ? sanitize_text_field((string)$row['product_name']) : $sku;
+            $src    = isset($row['source']) ? sanitize_key((string)$row['source']) : '';
+            if (!isset($snapshot[$sku])) {
+                $snapshot[$sku] = ['name' => $name, 'doc_qty' => 0, 'sources' => []];
+            }
+            $snapshot[$sku]['doc_qty'] += $qty;
+            if ($src !== '' && !in_array($src, $snapshot[$sku]['sources'], true)) {
+                $snapshot[$sku]['sources'][] = $src;
+            }
+        }
+        if (empty($snapshot)) {
+            return;
+        }
+
+        // Lấy danh sách SKU + tên + SL thực tế đã lưu vào phiếu (gộp nếu SKU lặp ở nhiều dòng/lô)
+        $item_table    = $wpdb->prefix . 'local_ledger_item';
+        $product_table = $wpdb->prefix . 'local_product_name';
+        $rows_actual = $wpdb->get_results($wpdb->prepare(
+            "SELECT p.local_product_sku   AS sku,
+                    p.local_product_name  AS product_name,
+                    SUM(li.quantity)      AS actual_qty
+             FROM `{$item_table}` li
+             LEFT JOIN `{$product_table}` p ON p.local_product_name_id = li.local_product_name_id
+             WHERE li.local_ledger_id = %d
+               AND (li.is_deleted = 0 OR li.is_deleted IS NULL)
+             GROUP BY p.local_product_sku, p.local_product_name",
+            $ctx['query_ledger_id']
+        ));
+        $present_map = []; // sku => { name, qty }
+        foreach ($rows_actual as $r) {
+            $s = trim((string)($r->sku ?? ''));
+            if ($s === '') continue;
+            $present_map[$s] = [
+                'name' => (string)($r->product_name ?? ''),
+                'qty'  => floatval($r->actual_qty),
+            ];
+        }
+
+        // 1) SKU trong snapshot mà KHÔNG còn trong phiếu → 'missing' (đã xóa dòng chứng từ)
+        foreach ($snapshot as $sku => $info) {
+            if (isset($present_map[$sku])) {
+                continue;
+            }
+            $doc_qty = floatval($info['doc_qty']);
+            $this->_insert_discrepancy($ctx, [
+                'sku'              => $sku,
+                'product_name'     => $info['name'],
+                'discrepancy_type' => 'missing',
+                'doc_quantity'     => $doc_qty,
+                'actual_quantity'  => 0,
+                'quantity_diff'    => -$doc_qty,
+                'meta_extra'       => [
+                    'reason'         => 'sku_deleted_from_ticket',
+                    'note'           => 'SKU có trong chứng từ đã import nhưng dòng đã bị xóa khỏi phiếu trước khi tạo',
+                    'import_sources' => $info['sources'], // excel / ai / image / ...
+                ],
+            ]);
+        }
+
+        // 2) SKU có dòng trong phiếu mà KHÔNG có trong snapshot → 'extra' (user thêm dòng mới)
+        foreach ($present_map as $sku => $info) {
+            if (isset($snapshot[$sku])) {
+                continue;
+            }
+            $actual_qty = floatval($info['qty']);
+            if ($actual_qty <= 0) continue;
+            $this->_insert_discrepancy($ctx, [
+                'sku'              => $sku,
+                'product_name'     => $info['name'] ?: $sku,
+                'discrepancy_type' => 'extra',
+                'doc_quantity'     => 0,
+                'actual_quantity'  => $actual_qty,
+                'quantity_diff'    => $actual_qty,
+                'meta_extra'       => [
+                    'reason' => 'sku_added_outside_doc',
+                    'note'   => 'SKU được user thêm mới vào phiếu, không có trong chứng từ đã import',
+                ],
+            ]);
+        }
+    }
+
+    /**
+     * Helper chung: insert 1 dòng discrepancy với context + payload.
+     * Tất cả meta (ticket_type, ledger_url, software_source) được merge sẵn → các hàm log
+     * chỉ cần truyền thêm `meta_extra` riêng theo loại lệch.
+     *
+     * @param array $ctx     Context chung (ledger_id, blog_id, ticket_code, ...).
+     * @param array $payload sku, product_name, discrepancy_type, doc_quantity, actual_quantity,
+     *                       quantity_diff, meta_extra (array).
+     */
+    private function _insert_discrepancy($ctx, $payload)
+    {
+        global $wpdb;
+
+        $meta = array_merge([
+            'ticket_type'     => $ctx['ticket_type'],
+            'ledger_url'      => $ctx['ledger_url'],
+            'software_source' => $ctx['software_source'],
+        ], (array)($payload['meta_extra'] ?? []));
+
+        $wpdb->insert($ctx['disc_table'], [
+            'blog_id'                 => $ctx['blog_id'],
+            'local_ledger_id'         => $ctx['ledger_id'],
+            'local_ledger_code'       => $ctx['ticket_code'],
+            'local_product_sku'       => $payload['sku'],
+            'local_product_name_text' => $payload['product_name'],
+            'discrepancy_type'        => $payload['discrepancy_type'],
+            'doc_quantity'            => $payload['doc_quantity'],
+            'actual_quantity'         => $payload['actual_quantity'],
+            'quantity_diff'           => $payload['quantity_diff'],
+            'resolution_status'       => 'pending',
+            'discrepancy_meta'        => wp_json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'user_id'                 => $ctx['user_id'],
+            'is_deleted'              => 0,
+            'created_at'              => $ctx['now'],
+            'updated_at'              => $ctx['now'],
+        ]);
     }
 }
 
