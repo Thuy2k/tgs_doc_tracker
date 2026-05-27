@@ -1,0 +1,85 @@
+/**
+ * TGS Doc Tracker - Styles
+ */
+
+/* ── Software Source Card ───────────────────────────────────────────── */
+#tgsDocSoftwareSourceCard {
+    transition: box-shadow 0.2s;
+}
+#tgsDocSoftwareSourceCard:hover {
+    box-shadow: 0 2px 12px rgba(105, 108, 255, 0.15);
+}
+
+/* ── File chips trong thư viện tạm ──────────────────────────────────── */
+.tgs-doc-file-chip {
+    transition: background 0.15s;
+    cursor: default;
+}
+.tgs-doc-file-chip:hover {
+    background: #e0e5ff !important;
+}
+
+/* ── Cột SL chứng từ ─────────────────────────────────────────────────── */
+.tgs-doc-qty-col {
+    background: #f0f6ff;
+    color: #696cff;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.tgs-doc-qty-cell input.tgs-doc-qty-input {
+    background: #f8faff;
+    border-color: #c5caff;
+    color: #3c40a0;
+    font-size: 0.85em;
+    padding: 2px 4px;
+    min-width: 70px;
+    cursor: not-allowed;
+}
+
+.tgs-doc-qty-cell input.tgs-doc-qty-input:disabled {
+    opacity: 0.9;
+}
+
+/* ── Cảnh báo lệch số lượng chứng từ ────────────────────────────────── */
+
+/* Dòng đang lệch: viền đỏ trái + nền hồng nhạt */
+tr.tgs-doc-qty-mismatch > td {
+    background-color: #fff5f5 !important;
+    border-top: 1px solid #f5c6cb !important;
+    border-bottom: 1px solid #f5c6cb !important;
+}
+tr.tgs-doc-qty-mismatch > td:first-child {
+    border-left: 4px solid #dc3545 !important;
+}
+
+/* Badge cảnh báo hiển thị dưới ô số lượng */
+.tgs-doc-mismatch-badge {
+    display: block;
+    margin-top: 3px;
+    background: #dc3545;
+    color: #fff;
+    font-size: 0.68em;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    line-height: 1.4;
+    animation: tgs-mismatch-pulse 1.8s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes tgs-mismatch-pulse {
+    0%,  100% { opacity: 1;   }
+    50%        { opacity: 0.55; }
+}
+
+/* Nền của ô input doc_qty cũng chuyển đỏ khi dòng lệch */
+tr.tgs-doc-qty-mismatch .tgs-doc-qty-cell input.tgs-doc-qty-input {
+    background-color: #ffe0e3 !important;
+    border-color: #dc3545 !important;
+    color: #dc3545 !important;
+}
+
+/* ── Discrepancy badge override ──────────────────────────────────────── */
+.badge.bg-secondary { background-color: #a1acb8 !important; }
