@@ -20,19 +20,31 @@
     var NONCE       = tgsDocTracker.nonce;
     var TICKET_TYPE = tgsDocTracker.ticketType;
 
+    // Snapshot SKU→docQty từ Excel/Edit để cảnh báo khi user xóa dòng
+    // (key = sku, value = { qty: number, name: string })
+    var _docQtySnapshot = {};
+
     // ── Khởi tạo sau khi DOM sẵn sàng ────────────────────────────────────
     $(document).ready(function () {
-        initSoftwareSourceCard();
-        initTempFileLibrary();
-        initDocQtyColumnFill();
-        initDocQtyMismatchWarning();
-        initSubmitGuard();
-        initFormSubmitHook();
-        loadTempFiles();
-        injectMismatchConfirmModal();
+        try {
+            console.log('[TGS Doc Tracker] init v' + (tgsDocTracker.version || '1.0.1') + ' for ticket type:', TICKET_TYPE);
+            initSoftwareSourceCard();
+            initTempFileLibrary();
+            initDocQtyColumnFill();
+            initDocQtyMismatchWarning();
+            initDocQtySnapshot();
+            initSubmitGuard();
+            initFormSubmitHook();
+            loadTempFiles();
+            injectMismatchConfirmModal();
 
-        // Expose reload function cho các module khác (e.g. ticket-excel-import.js)
-        tgsDocTracker.reloadFiles = loadTempFiles;
+            // Expose reload function cho các module khác (e.g. ticket-excel-import.js)
+            tgsDocTracker.reloadFiles = loadTempFiles;
+            // Expose snapshot cho debug
+            tgsDocTracker._snapshot = _docQtySnapshot;
+        } catch (err) {
+            console.error('[TGS Doc Tracker] init lỗi:', err);
+        }
     });
 
     // ── 1. Inject software source card ────────────────────────────────────
@@ -55,7 +67,15 @@
         });
 
         // Tooltip Bootstrap (nếu có)
-        $('[data-bs-toggle="tooltip"]').tooltip();
+        try {
+            if (typeof $.fn.tooltip === 'function') {
+                $('[data-bs-toggle="tooltip"]').tooltip();
+            } else if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+                document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+                    bootstrap.Tooltip.getOrCreateInstance(el);
+                });
+            }
+        } catch (e) { /* ignore tooltip init lỗi */ }
     }
 
     // ── 2. Quản lý thư viện file tạm ─────────────────────────────────────
@@ -340,6 +360,88 @@
     // ── 5. Intercept submit: cảnh báo nếu có dòng lệch ──────────────────
     var _submitConfirmed = false; // flag tránh check 2 lần sau khi user xác nhận
 
+    // ── Snapshot SKU → docQty (từ Excel fill / Edit load) ────────────────
+    function initDocQtySnapshot() {
+        // Khi excel-import / edit-purchase / edit-sale fill .tgs-doc-qty-input,
+        // chúng trigger 'tgs:doc_qty_filled' với { sku, qty, source }
+        $(document).on('tgs:doc_qty_filled', '.tgs-doc-qty-input', function (e, info) {
+            if (!info || !info.sku) return;
+            var qty = parseFloat(info.qty) || 0;
+            if (qty <= 0) return;
+            var sku = String(info.sku).trim();
+            if (!sku) return;
+            // Lấy tên SP từ row hiện tại (nếu có) để hiển thị trong cảnh báo
+            var $tr = $(this).closest('tr');
+            var name = $tr.find('td:nth-child(2)').text().trim().split('\n')[0].trim();
+            _docQtySnapshot[sku] = { qty: qty, name: name || sku, source: info.source || 'unknown' };
+            refreshDeletedSkuWarning();
+        });
+
+        // Khi user xóa dòng → kiểm tra lại snapshot sau khi DOM update
+        $(document).on('click', '.btn-ticket-remove-product', function () {
+            setTimeout(refreshDeletedSkuWarning, 50);
+        });
+    }
+
+    /**
+     * Trả về danh sách SKU đã có trong snapshot nhưng KHÔNG còn dòng tương ứng trong bảng.
+     * @returns {Array<{sku, name, docQty}>}
+     */
+    function collectDeletedSkus() {
+        var results = [];
+        // Lấy tập SKU hiện đang có trong bảng SP (cả chính + hàng tặng)
+        var presentSkus = {};
+        $('#ticketProductsTableBody tr[data-sku], #ticketGiftProductsTableBody tr[data-sku]').each(function () {
+            var s = String($(this).attr('data-sku') || '').trim();
+            if (s) presentSkus[s] = true;
+        });
+
+        Object.keys(_docQtySnapshot).forEach(function (sku) {
+            if (!presentSkus[sku]) {
+                var snap = _docQtySnapshot[sku];
+                results.push({
+                    sku:     sku,
+                    name:    snap.name || sku,
+                    docQty:  snap.qty,
+                });
+            }
+        });
+
+        return results;
+    }
+
+    /**
+     * Hiển thị/ẩn cảnh báo persistent (chip) trong khu vực thư viện chứng từ
+     * khi có SKU bị xóa khỏi bảng.
+     */
+    function refreshDeletedSkuWarning() {
+        var deleted = collectDeletedSkus();
+        var $warn = $('#tgsDocDeletedSkuWarning');
+        if (!deleted.length) {
+            $warn.remove();
+            return;
+        }
+        if (!$warn.length) {
+            $warn = $('<div id="tgsDocDeletedSkuWarning" class="alert alert-warning py-2 px-3 mb-2 small d-flex align-items-start gap-2" style="border-left:4px solid #ffab00;"></div>');
+            var $anchor = $('#tgsDocTempLibraryWrapper');
+            if ($anchor.length) {
+                $anchor.prepend($warn);
+            } else {
+                $('#tgsDocSoftwareSourceCard .card-body').prepend($warn);
+            }
+        }
+        var listHtml = deleted.map(function (d) {
+            return '<li><code>' + escHtml(d.sku) + '</code> – ' + escHtml(d.name) + ' (CT: <strong>' + d.docQty + '</strong>)</li>';
+        }).join('');
+        $warn.html(
+            '<i class="bx bx-error-circle text-warning" style="font-size:1.1em;margin-top:1px;"></i>' +
+            '<div style="flex:1;">' +
+            '<div class="fw-semibold text-warning mb-1">Đã xóa ' + deleted.length + ' SKU có trong chứng từ:</div>' +
+            '<ul class="mb-0 ps-3">' + listHtml + '</ul>' +
+            '</div>'
+        );
+    }
+
     function initSubmitGuard() {
         // Hành động tạo phiếu chính thường qua click '#btnTicketSubmit' → trigger form submit
         // Ta chặn tại lúc click button, trước khi form submit
@@ -349,13 +451,14 @@
                 return; // cho phép gửi bình thường
             }
 
-            var mismatches = collectMismatches();
-            if (!mismatches.length) return; // không lệch → tiếp tục bình thường
+            var mismatches  = collectMismatches();
+            var deletedSkus = collectDeletedSkus();
+            if (!mismatches.length && !deletedSkus.length) return;
 
             // Có lệch → chặn và hiện modal xác nhận
             e.preventDefault();
             e.stopImmediatePropagation();
-            showMismatchConfirmModal(mismatches);
+            showMismatchConfirmModal(mismatches, deletedSkus);
         });
     }
 
@@ -446,7 +549,8 @@
         });
     }
 
-    function showMismatchConfirmModal(mismatches) {
+    function showMismatchConfirmModal(mismatches, deletedSkus) {
+        deletedSkus = deletedSkus || [];
         var rows = mismatches.map(function (m) {
             var diffClass = m.diff < 0 ? 'text-danger' : 'text-warning';
             var diffText  = (m.diff > 0 ? '+' : '') + m.diff.toFixed(3).replace(/\.?0+$/, '');
@@ -456,6 +560,21 @@
                 + '<td class="text-center fw-semibold">' + m.docQty + '</td>'
                 + '<td class="text-center fw-semibold">' + m.actualQty + '</td>'
                 + '<td class="text-center fw-bold ' + diffClass + '">' + diffText + '</td>'
+                + '</tr>';
+        }).join('');
+
+        // Thêm các dòng SKU đã bị xóa (SL thực tế = 0, lệch = -docQty)
+        rows += deletedSkus.map(function (d) {
+            var diffText = '-' + d.docQty;
+            return '<tr class="table-warning">'
+                + '<td class="text-truncate" style="max-width:200px;">'
+                +   '<i class="bx bx-trash text-danger me-1"></i>' + escHtml(d.name)
+                +   ' <span class="badge bg-warning text-dark ms-1">Đã xóa</span>'
+                + '</td>'
+                + '<td><code>' + escHtml(d.sku) + '</code></td>'
+                + '<td class="text-center fw-semibold">' + d.docQty + '</td>'
+                + '<td class="text-center fw-semibold text-muted">0</td>'
+                + '<td class="text-center fw-bold text-danger">' + diffText + '</td>'
                 + '</tr>';
         }).join('');
 

@@ -280,10 +280,21 @@ class TGS_Doc_Tracker_Ajax
             $where[]  = 'l.created_at <= %s';
             $params[] = $date_to . ' 23:59:59';
         }
+        // Lọc theo nguồn: dùng LIKE thay vì JSON_CONTAINS để bắt cả dữ liệu cũ
+        // bị double-encode (vd ["[\"htsoft\"]"]) lẫn dữ liệu chuẩn (["htsoft"]).
+        // Ưu tiên item-level source (vì phiếu chuyển kho có 2 ledger, source nằm ở ledger cha
+        // còn items nằm ở ledger con — item-level source được copy từ cha sang chính xác).
+        // Fallback sang ledger-level cho phiếu đơn ledger không copy source xuống item.
+        $src_expr = "COALESCE(i.local_ledger_item_software_source, l.local_ledger_software_source)";
         if ($source === 'root') {
-            $where[] = "(l.local_ledger_software_source IS NULL OR JSON_CONTAINS(l.local_ledger_software_source, '\"root\"'))";
+            $where[]  = "($src_expr IS NULL OR $src_expr LIKE %s)";
+            $params[] = '%root%';
         } elseif ($source === 'htsoft') {
-            $where[] = "JSON_CONTAINS(l.local_ledger_software_source, '\"htsoft\"')";
+            $where[]  = "$src_expr LIKE %s";
+            $params[] = '%htsoft%';
+        } elseif ($source === 'thu_kho') {
+            $where[]  = "$src_expr LIKE %s";
+            $params[] = '%thu_kho%';
         }
 
         $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
@@ -293,7 +304,7 @@ class TGS_Doc_Tracker_Ajax
                 i.local_product_sku,
                 MAX(i.local_product_name_id) AS local_product_name_id,
                 l.local_ledger_type,
-                l.local_ledger_software_source,
+                {$src_expr} AS local_ledger_software_source,
                 SUM(CASE WHEN l.local_ledger_type IN (1,5,7,9)  THEN COALESCE(i.local_ledger_item_doc_quantity, i.quantity) ELSE 0 END) AS total_doc_import,
                 SUM(CASE WHEN l.local_ledger_type IN (2,6,8,10) THEN COALESCE(i.local_ledger_item_doc_quantity, i.quantity) ELSE 0 END) AS total_doc_export,
                 SUM(CASE WHEN l.local_ledger_type IN (1,5,7,9)  THEN i.quantity ELSE 0 END) AS total_actual_import,
@@ -302,16 +313,94 @@ class TGS_Doc_Tracker_Ajax
             FROM `{$t_item}` i
             INNER JOIN `{$t_ledger}` l ON i.local_ledger_id = l.local_ledger_id
             {$where_sql}
-            GROUP BY i.local_product_sku, l.local_ledger_type, l.local_ledger_software_source
+            GROUP BY i.local_product_sku, l.local_ledger_type, {$src_expr}
             ORDER BY i.local_product_sku
-            LIMIT 500
+            LIMIT 2000
         ";
 
         if ($params) {
-            $rows = $wpdb->get_results($wpdb->prepare($sql, ...$params));
+            $raw_rows = $wpdb->get_results($wpdb->prepare($sql, ...$params));
         } else {
-            $rows = $wpdb->get_results($sql);
+            $raw_rows = $wpdb->get_results($sql);
         }
+
+        // ── Tách JSON software_source thành từng nguồn riêng biệt ──
+        // 1 phiếu lưu ["root","htsoft"] → phải hiển thị 2 dòng (1 root + 1 htsoft)
+        // NULL/'[]' → mặc định coi như nguồn "root"
+        $buckets = []; // key: sku|type|src
+        foreach ($raw_rows as $r) {
+            $src_raw = $r->local_ledger_software_source;
+            $src_list = [];
+            if (empty($src_raw) || $src_raw === 'null') {
+                $src_list = ['root'];
+            } else {
+                // Decode tối đa 3 lần để bắt cả data cũ bị double/triple-encode
+                // (vd: '["[\\\"htsoft\\\"]"]' → decode 1 lần ra ['[\"htsoft\"]'] → decode tiếp ra ['htsoft'])
+                $decoded = $src_raw;
+                for ($i = 0; $i < 3; $i++) {
+                    if (is_string($decoded)) {
+                        $tmp = json_decode($decoded, true);
+                        if ($tmp === null) break;
+                        $decoded = $tmp;
+                    } elseif (is_array($decoded)) {
+                        // Nếu mảng chỉ có 1 phần tử là JSON string → decode tiếp
+                        if (count($decoded) === 1 && is_string($decoded[0]) && $decoded[0] !== '' && $decoded[0][0] === '[') {
+                            $tmp = json_decode($decoded[0], true);
+                            if (is_array($tmp)) { $decoded = $tmp; continue; }
+                        }
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+                if (is_array($decoded)) {
+                    $src_list = array_values(array_filter(array_map(function ($v) {
+                        return is_string($v) ? trim($v) : '';
+                    }, $decoded), 'strlen'));
+                } elseif (is_string($decoded) && $decoded !== '') {
+                    $src_list = [$decoded];
+                }
+                if (empty($src_list)) {
+                    $src_list = ['root'];
+                }
+            }
+
+            foreach ($src_list as $single_src) {
+                // Nếu user lọc 1 nguồn cụ thể → bỏ các nguồn khác trong cùng phiếu
+                if ($source !== '' && $source !== $single_src) {
+                    continue;
+                }
+                $key = $r->local_product_sku . '|' . $r->local_ledger_type . '|' . $single_src;
+                if (!isset($buckets[$key])) {
+                    $buckets[$key] = [
+                        'local_product_sku'            => $r->local_product_sku,
+                        'local_product_name_id'        => $r->local_product_name_id,
+                        'local_ledger_type'            => $r->local_ledger_type,
+                        'local_ledger_software_source' => $single_src,
+                        'total_doc_import'             => 0,
+                        'total_doc_export'             => 0,
+                        'total_actual_import'          => 0,
+                        'total_actual_export'          => 0,
+                        'ticket_count'                 => 0,
+                    ];
+                }
+                $buckets[$key]['total_doc_import']    += (float) $r->total_doc_import;
+                $buckets[$key]['total_doc_export']    += (float) $r->total_doc_export;
+                $buckets[$key]['total_actual_import'] += (float) $r->total_actual_import;
+                $buckets[$key]['total_actual_export'] += (float) $r->total_actual_export;
+                $buckets[$key]['ticket_count']        += (int) $r->ticket_count;
+            }
+        }
+
+        // Sort: theo SKU rồi nguồn rồi loại
+        $rows = array_values($buckets);
+        usort($rows, function ($a, $b) {
+            $c = strcmp($a['local_product_sku'], $b['local_product_sku']);
+            if ($c !== 0) return $c;
+            $c = strcmp($a['local_ledger_software_source'], $b['local_ledger_software_source']);
+            if ($c !== 0) return $c;
+            return ((int) $a['local_ledger_type']) - ((int) $b['local_ledger_type']);
+        });
 
         wp_send_json_success(['rows' => $rows]);
     }

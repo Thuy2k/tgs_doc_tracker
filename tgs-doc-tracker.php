@@ -3,7 +3,7 @@
  * Plugin Name: TGS Doc Tracker - Truy vết chứng từ
  * Plugin URI: https://bizgpt.vn/
  * Description: Quản lý chứng từ nhập/xuất (Excel, ảnh), theo dõi lệch số lượng/SKU giữa chứng từ và thực tế nhập phiếu. Hook vào TGS Shop Management.
- * Version: 1.0.0
+ * Version: 1.0.2
  * Author: BIZGPT_AI
  * Author URI: https://bizgpt.vn/
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 // ── Constants ──────────────────────────────────────────────────────────────
 define('TGS_DOC_TRACKER_DIR',     plugin_dir_path(__FILE__));
 define('TGS_DOC_TRACKER_URL',     plugin_dir_url(__FILE__));
-define('TGS_DOC_TRACKER_VERSION', '1.0.0');
+define('TGS_DOC_TRACKER_VERSION', '1.0.2');
 
 // Upload folder name (dưới wp-content/uploads/tgs-doc-tracker/{blog_id}/{YYYY/MM/DD}/)
 define('TGS_DOC_TRACKER_UPLOAD_SUBDIR', 'tgs-doc-tracker');

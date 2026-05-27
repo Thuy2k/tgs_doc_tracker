@@ -40,6 +40,7 @@ $nonce    = wp_create_nonce('tgs_doc_tracker_nonce');
                         <option value="">Tất cả nguồn</option>
                         <option value="root">Hệ thống mình (root)</option>
                         <option value="htsoft">HTSoft</option>
+                        <option value="thu_kho">Thủ kho</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -101,16 +102,22 @@ $nonce    = wp_create_nonce('tgs_doc_tracker_nonce');
     };
 
     function sourceLabel(src) {
-        if (!src) return '<span class="badge bg-secondary">root</span>';
-        try {
-            var arr = JSON.parse(src);
-            return arr.map(function(s){
-                if (s === 'root')    return '<span class="badge bg-primary">root</span>';
-                if (s === 'htsoft')  return '<span class="badge bg-warning text-dark">htsoft</span>';
-                if (s === 'thu_kho') return '<span class="badge bg-info text-dark">thủ kho</span>';
-                return '<span class="badge bg-secondary">' + s + '</span>';
-            }).join(' ');
-        } catch(e) { return '<span class="badge bg-secondary">' + src + '</span>'; }
+        // Backend trả về single source string ('root' | 'htsoft' | 'thu_kho' | ...)
+        // Backward-compat: nếu còn JSON array thì decode
+        if (!src) return '<span class="badge bg-secondary">—</span>';
+        var list = [src];
+        if (typeof src === 'string' && src.charAt(0) === '[') {
+            try {
+                var arr = JSON.parse(src);
+                if (Array.isArray(arr) && arr.length) list = arr;
+            } catch (e) {}
+        }
+        return list.map(function (s) {
+            if (s === 'root')    return '<span class="badge bg-primary">Hệ thống mình (root)</span>';
+            if (s === 'htsoft')  return '<span class="badge bg-warning text-dark">HTSoft</span>';
+            if (s === 'thu_kho') return '<span class="badge bg-info text-dark">Thủ kho</span>';
+            return '<span class="badge bg-secondary">' + s + '</span>';
+        }).join(' ');
     }
 
     function loadData() {
