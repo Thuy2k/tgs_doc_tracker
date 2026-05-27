@@ -82,40 +82,41 @@ class TGS_Doc_Tracker
     // ── Routes ───────────────────────────────────────────────────────────
     public function register_routes($routes)
     {
-        $routes['doc-tracker-dashboard']   = TGS_DOC_TRACKER_DIR . 'admin-views/pages/dashboard.php';
-        $routes['doc-tracker-discrepancy'] = TGS_DOC_TRACKER_DIR . 'admin-views/pages/discrepancy-report.php';
-        $routes['doc-tracker-inventory']   = TGS_DOC_TRACKER_DIR . 'admin-views/pages/inventory-by-source.php';
+        $routes['doc-tracker-dashboard']   = ['Tổng quan Chứng từ',      TGS_DOC_TRACKER_DIR . 'admin-views/pages/dashboard.php'];
+        $routes['doc-tracker-discrepancy'] = ['Báo cáo lệch Chứng từ',   TGS_DOC_TRACKER_DIR . 'admin-views/pages/discrepancy-report.php'];
+        $routes['doc-tracker-inventory']   = ['Tồn kho theo nguồn',       TGS_DOC_TRACKER_DIR . 'admin-views/pages/inventory-by-source.php'];
         return $routes;
     }
 
     // ── Nav menu ─────────────────────────────────────────────────────────
     public function render_nav_menu($current_view)
     {
-        $base = 'admin.php?page=tgs-shop-management&view=';
         $views = ['doc-tracker-dashboard', 'doc-tracker-discrepancy', 'doc-tracker-inventory'];
-        $active = in_array($current_view, $views) ? 'active' : '';
+        $is_active = in_array($current_view, $views);
+        $open = $is_active ? ' active open' : '';
+        $url = function ($v) {
+            return admin_url('admin.php?page=tgs-shop-management&view=' . $v);
+        };
         ?>
-        <li class="nav-item dropdown <?php echo $active; ?>">
-            <a class="nav-link dropdown-toggle <?php echo $active; ?>" href="#" data-bs-toggle="dropdown">
-                <i class="bx bx-file-find me-1"></i>Chứng từ
+        <li class="menu-item<?php echo $open; ?>">
+            <a href="javascript:void(0);" class="menu-link menu-toggle">
+                <i class="menu-icon tf-icons bx bx-file-find"></i>
+                <div>Chứng từ</div>
             </a>
-            <ul class="dropdown-menu">
-                <li>
-                    <a class="dropdown-item <?php echo $current_view === 'doc-tracker-dashboard' ? 'active' : ''; ?>"
-                       href="<?php echo admin_url($base . 'doc-tracker-dashboard'); ?>">
-                        <i class="bx bx-home-alt me-1"></i>Tổng quan chứng từ
+            <ul class="menu-sub">
+                <li class="menu-item<?php echo $current_view === 'doc-tracker-dashboard' ? ' active' : ''; ?>">
+                    <a href="<?php echo esc_url($url('doc-tracker-dashboard')); ?>" class="menu-link">
+                        <div>Tổng quan chứng từ</div>
                     </a>
                 </li>
-                <li>
-                    <a class="dropdown-item <?php echo $current_view === 'doc-tracker-discrepancy' ? 'active' : ''; ?>"
-                       href="<?php echo admin_url($base . 'doc-tracker-discrepancy'); ?>">
-                        <i class="bx bx-error-alt me-1"></i>Báo cáo lệch chứng từ
+                <li class="menu-item<?php echo $current_view === 'doc-tracker-discrepancy' ? ' active' : ''; ?>">
+                    <a href="<?php echo esc_url($url('doc-tracker-discrepancy')); ?>" class="menu-link">
+                        <div>Báo cáo lệch chứng từ</div>
                     </a>
                 </li>
-                <li>
-                    <a class="dropdown-item <?php echo $current_view === 'doc-tracker-inventory' ? 'active' : ''; ?>"
-                       href="<?php echo admin_url($base . 'doc-tracker-inventory'); ?>">
-                        <i class="bx bx-stats me-1"></i>Tồn kho theo nguồn
+                <li class="menu-item<?php echo $current_view === 'doc-tracker-inventory' ? ' active' : ''; ?>">
+                    <a href="<?php echo esc_url($url('doc-tracker-inventory')); ?>" class="menu-link">
+                        <div>Tồn kho theo nguồn</div>
                     </a>
                 </li>
             </ul>
