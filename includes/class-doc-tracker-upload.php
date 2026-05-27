@@ -1,10 +1,10 @@
-﻿<?php
+<?php
 /**
  * TGS Doc Tracker - Upload Handler
  *
- * Xá»­ lÃ½ upload file táº¡m (áº£nh, excel) vÃ o thÆ° viá»‡n chá»©ng tá»«:
- *   - Upload táº¡m: wp-content/uploads/tgs-doc-tracker/tmp/{blog_id}/{session_key}/
- *   - Sau khi táº¡o phiáº¿u thÃ nh cÃ´ng: commit â†’ wp-content/uploads/tgs-doc-tracker/{blog_id}/{YYYY/MM/DD}/
+ * Xử lý upload file tạm (ảnh, excel) vào thư viện chứng từ:
+ *   - Upload tạm: wp-content/uploads/tgs-doc-tracker/tmp/{blog_id}/{session_key}/
+ *   - Sau khi tạo phiếu thành công: commit → wp-content/uploads/tgs-doc-tracker/{blog_id}/{YYYY/MM/DD}/
  *
  * @package tgs_doc_tracker
  */
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 
 class TGS_Doc_Tracker_Upload
 {
-    // â”€â”€ Allowed mime types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Allowed mime types ───────────────────────────────────────────────
     private static $allowed_mimes = [
         'image/jpeg'                                                  => 'jpg',
         'image/png'                                                   => 'png',
@@ -27,7 +27,7 @@ class TGS_Doc_Tracker_Upload
         'text/csv'                                                    => 'csv',
     ];
 
-    // â”€â”€ Láº¥y thÆ° má»¥c tmp â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Lấy thư mục tmp ──────────────────────────────────────────────────
     private static function get_tmp_dir($blog_id, $session_key)
     {
         $upload_dir = wp_upload_dir();
@@ -37,7 +37,7 @@ class TGS_Doc_Tracker_Upload
         return trailingslashit($dir);
     }
 
-    // â”€â”€ Láº¥y thÆ° má»¥c chÃ­nh thá»©c (sau khi commit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Lấy thư mục chính thức (sau khi commit) ─────────────────────────
     private static function get_commit_dir($blog_id, $date = null)
     {
         $upload_dir = wp_upload_dir();
@@ -50,7 +50,7 @@ class TGS_Doc_Tracker_Upload
         return trailingslashit($dir);
     }
 
-    // â”€â”€ URL cá»§a thÆ° má»¥c chÃ­nh thá»©c â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── URL của thư mục chính thức ───────────────────────────────────────
     private static function get_commit_url($blog_id, $date = null)
     {
         $upload_dir = wp_upload_dir();
@@ -61,10 +61,10 @@ class TGS_Doc_Tracker_Upload
         return trailingslashit($base_url) . TGS_DOC_TRACKER_UPLOAD_SUBDIR . '/' . intval($blog_id) . '/' . $date . '/';
     }
 
-    // â”€â”€ Upload file táº¡m â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Upload file tạm ──────────────────────────────────────────────────
     /**
      * @param array  $file        $_FILES entry
-     * @param string $session_key KhÃ³a phiÃªn (user_id + '_' + ticket_type)
+     * @param string $session_key Khóa phiên (user_id + '_' + ticket_type)
      * @param string $source_type 'excel_import' | 'ai_recognition' | 'manual'
      * @return array|WP_Error ['session_id', 'file_name', 'file_url', 'file_type', 'file_size']
      */
@@ -81,12 +81,12 @@ class TGS_Doc_Tracker_Upload
         finfo_close($finfo);
 
         if (!isset(self::$allowed_mimes[$mime])) {
-            return new WP_Error('invalid_mime', 'Loáº¡i file khÃ´ng Ä‘Æ°á»£c phÃ©p: ' . esc_html($mime));
+            return new WP_Error('invalid_mime', 'Loại file không được phép: ' . esc_html($mime));
         }
 
-        // Kiá»ƒm tra kÃ­ch thÆ°á»›c (max 20MB)
+        // Kiểm tra kích thước (max 20MB)
         if ($file['size'] > 20 * 1024 * 1024) {
-            return new WP_Error('file_too_large', 'File quÃ¡ lá»›n (tá»‘i Ä‘a 20MB).');
+            return new WP_Error('file_too_large', 'File quá lớn (tối đa 20MB).');
         }
 
         $ext       = self::$allowed_mimes[$mime];
@@ -97,10 +97,10 @@ class TGS_Doc_Tracker_Upload
         $dest      = $tmp_dir . $unique;
 
         if (!move_uploaded_file($file['tmp_name'], $dest)) {
-            return new WP_Error('upload_failed', 'KhÃ´ng thá»ƒ lÆ°u file táº¡m.');
+            return new WP_Error('upload_failed', 'Không thể lưu file tạm.');
         }
 
-        // Ghi vÃ o báº£ng session
+        // Ghi vào bảng session
         $table = TGS_Shop_Database::table('local_doc_tracker_session');
         $now   = current_time('mysql');
         $wpdb->insert($table, [
@@ -108,7 +108,7 @@ class TGS_Doc_Tracker_Upload
             'session_key' => $session_key,
             'file_name'   => $safe_name,
             'file_path'   => $dest,
-            'file_url'    => '',   // URL sáº½ cáº­p nháº­t sau
+            'file_url'    => '',   // URL sẽ cập nhật sau
             'file_type'   => $file_type,
             'file_size'   => $file['size'],
             'source_type' => $source_type,
@@ -126,7 +126,7 @@ class TGS_Doc_Tracker_Upload
         ];
     }
 
-    // â”€â”€ XÃ³a file táº¡m â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Xóa file tạm ────────────────────────────────────────────────────
     public static function delete_temp($session_id)
     {
         global $wpdb;
@@ -141,10 +141,10 @@ class TGS_Doc_Tracker_Upload
         ));
 
         if (!$row) {
-            return new WP_Error('not_found', 'File khÃ´ng tá»“n táº¡i hoáº·c Ä‘Ã£ commit.');
+            return new WP_Error('not_found', 'File không tồn tại hoặc đã commit.');
         }
 
-        // XÃ³a file váº­t lÃ½
+        // Xóa file vật lý
         if (file_exists($row->file_path)) {
             @unlink($row->file_path);
         }
@@ -154,7 +154,7 @@ class TGS_Doc_Tracker_Upload
         return true;
     }
 
-    // â”€â”€ Láº¥y danh sÃ¡ch file táº¡m theo session_key â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Lấy danh sách file tạm theo session_key ──────────────────────────
     public static function list_temp($session_key)
     {
         global $wpdb;
@@ -172,13 +172,13 @@ class TGS_Doc_Tracker_Upload
         ));
     }
 
-    // â”€â”€ Commit files táº¡m khi táº¡o phiáº¿u thÃ nh cÃ´ng â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Commit files tạm khi tạo phiếu thành công ───────────────────────
     /**
-     * Copy files tá»« tmp â†’ thÆ° má»¥c chÃ­nh thá»©c theo {blog_id}/{YYYY/MM/DD}/
-     * LÆ°u Ä‘Æ°á»ng dáº«n vÃ o local_ledger.local_ledger_advance_meta['doc_files']
+     * Copy files từ tmp → thư mục chính thức theo {blog_id}/{YYYY/MM/DD}/
+     * Lưu đường dẫn vào local_ledger.local_ledger_advance_meta['doc_files']
      *
-     * @param int    $ledger_id   ID phiáº¿u vá»«a táº¡o
-     * @param string $ticket_type Loáº¡i phiáº¿u
+     * @param int    $ledger_id   ID phiếu vừa tạo
+     * @param string $ticket_type Loại phiếu
      */
     public static function commit_temp_files($ledger_id, $ticket_type)
     {
@@ -227,7 +227,7 @@ class TGS_Doc_Tracker_Upload
                 'uploaded_at' => $f->created_at,
             ];
 
-            // ÄÃ¡nh dáº¥u Ä‘Ã£ commit
+            // Đánh dấu đã commit
             $wpdb->update($table_sess, [
                 'committed'           => 1,
                 'committed_ledger_id' => $ledger_id,
@@ -239,7 +239,7 @@ class TGS_Doc_Tracker_Upload
             return;
         }
 
-        // LÆ°u Ä‘Æ°á»ng dáº«n vÃ o local_ledger.local_ledger_advance_meta['doc_files']
+        // Lưu đường dẫn vào local_ledger.local_ledger_advance_meta['doc_files']
         $table_ledger  = defined('TGS_TABLE_LOCAL_LEDGER')
             ? TGS_TABLE_LOCAL_LEDGER
             : $wpdb->prefix . 'local_ledger';
@@ -260,7 +260,7 @@ class TGS_Doc_Tracker_Upload
         ], ['local_ledger_id' => $ledger_id]);
     }
 
-    // â”€â”€ Dá»n file táº¡m Ä‘Ã£ háº¿t háº¡n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Dọn file tạm đã hết hạn ──────────────────────────────────────────
     public static function cleanup_expired()
     {
         global $wpdb;
