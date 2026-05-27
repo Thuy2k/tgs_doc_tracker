@@ -174,7 +174,7 @@ $ajax_url = admin_url('admin-ajax.php');
                 <h5 class="modal-title"><i class="bx bx-file me-2"></i>File chứng từ — <span id="discFilesLedgerCode"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="discFilesBody">
+            <div class="modal-body" id="discFilesBody" style="max-height:70vh;overflow-y:auto;">
                 <div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>
             </div>
         </div>
@@ -367,13 +367,17 @@ $ajax_url = admin_url('admin-ajax.php');
     });
 
     // ── Modal chỉnh sửa đơn lẻ ───────────────────────────────────────────
+    function bsModal(id) {
+        return bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
+    }
+
     $(document).on('click', '.btnDiscEdit', function () {
         var $btn = $(this);
         $('#discUpdateId').val($btn.data('id'));
         $('#discUpdateStatus').val($btn.data('status'));
         $('#discUpdateNote').val(decodeURIComponent($btn.data('note')));
         $('#discUpdateMethod').val(decodeURIComponent($btn.data('method')));
-        $('#discUpdateModal').modal('show');
+        bsModal('discUpdateModal').show();
     });
 
     $('#btnDiscUpdateSave').on('click', function () {
@@ -387,7 +391,7 @@ $ajax_url = admin_url('admin-ajax.php');
             resolution_method:  $('#discUpdateMethod').val(),
         }, function (res) {
             $btn.prop('disabled', false);
-            $('#discUpdateModal').modal('hide');
+            bsModal('discUpdateModal').hide();
             alert(res.success ? '✅ ' + res.data.message : '❌ ' + (res.data?.message || 'Lỗi'));
             if (res.success) loadData(currentPage);
         });
@@ -399,7 +403,7 @@ $ajax_url = admin_url('admin-ajax.php');
         var ledgerCode = $(this).data('ledger-code') || ('Phiếu #' + ledgerId);
         $('#discFilesLedgerCode').text(ledgerCode);
         $('#discFilesBody').html('<div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>');
-        $('#discFilesModal').modal('show');
+        bsModal('discFilesModal').show();
         $.post(ajaxUrl, {
             action:    'tgs_doc_tracker_get_ledger_files',
             nonce:     nonce,

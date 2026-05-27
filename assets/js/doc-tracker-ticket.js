@@ -353,6 +353,7 @@
             if (!mismatches.length) return; // không lệch → tiếp tục bình thường
 
             // Có lệch → chặn và hiện modal xác nhận
+            e.preventDefault();
             e.stopImmediatePropagation();
             showMismatchConfirmModal(mismatches);
         });

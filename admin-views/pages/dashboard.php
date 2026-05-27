@@ -19,10 +19,9 @@ $table_ledger   = defined('TGS_TABLE_LOCAL_LEDGER') ? TGS_TABLE_LOCAL_LEDGER : $
 $total_disc   = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM `{$table_disc}` WHERE blog_id=%d AND is_deleted=0", $blog_id));
 $pending_disc = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM `{$table_disc}` WHERE blog_id=%d AND is_deleted=0 AND resolution_status='pending'", $blog_id));
 $resolved_disc = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM `{$table_disc}` WHERE blog_id=%d AND is_deleted=0 AND resolution_status='resolved'", $blog_id));
-$ticket_with_source = (int) $wpdb->get_var($wpdb->prepare(
-    "SELECT COUNT(*) FROM `{$table_ledger}` WHERE is_deleted=0 AND local_ledger_software_source IS NOT NULL",
-    $blog_id
-));
+$ticket_with_source = (int) $wpdb->get_var(
+    "SELECT COUNT(*) FROM `{$table_ledger}` WHERE is_deleted=0 AND local_ledger_software_source IS NOT NULL"
+);
 
 $base_url = 'admin.php?page=tgs-shop-management&view=';
 ?>
@@ -90,18 +89,7 @@ $base_url = 'admin.php?page=tgs-shop-management&view=';
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card h-100">
-                <div class="card-body text-center">
-                    <i class="bx bx-wrench bx-lg text-warning d-block mb-2"></i>
-                    <h6>Chạy Migrations</h6>
-                    <p class="text-muted small">Kích hoạt thủ công để tạo cột mới vào database</p>
-                    <button type="button" class="btn btn-sm btn-warning" id="btnRunMigrationsManual">
-                        <i class="bx bx-play me-1"></i>Chạy Migration
-                    </button>
-                </div>
-            </div>
-        </div>
+
     </div>
 
     <!-- Lệch gần đây -->
@@ -199,7 +187,7 @@ $base_url = 'admin.php?page=tgs-shop-management&view=';
                 <h5 class="modal-title"><i class="bx bx-file me-2"></i>File chứng từ — <span id="dashFilesLedgerCode"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="dashFilesBody">
+            <div class="modal-body" id="dashFilesBody" style="max-height:70vh;overflow-y:auto;">
                 <div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>
             </div>
         </div>
@@ -217,7 +205,7 @@ $base_url = 'admin.php?page=tgs-shop-management&view=';
         var ledgerCode = $(this).data('ledger-code') || ('Phiếu #' + ledgerId);
         $('#dashFilesLedgerCode').text(ledgerCode);
         $('#dashFilesBody').html('<div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>');
-        $('#dashFilesModal').modal('show');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('dashFilesModal')).show();
         $.post(ajaxUrl, {
             action:    'tgs_doc_tracker_get_ledger_files',
             nonce:     nonce,
@@ -259,22 +247,5 @@ $base_url = 'admin.php?page=tgs-shop-management&view=';
     });
 })(jQuery);
 
-document.getElementById('btnRunMigrationsManual')?.addEventListener('click', function () {
-    if (!confirm('Chạy migration sẽ thêm các cột mới vào database. Tiếp tục?')) return;
-    this.disabled = true;
-    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang chạy...';
-    const btn = this;
-    jQuery.post(tgsDocTracker?.ajaxUrl || ajaxurl, {
-        action: 'tgs_doc_tracker_run_migrations',
-        nonce: tgsDocTracker?.nonce || ''
-    }, function (res) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bx bx-play me-1"></i>Chạy Migration';
-        if (res.success) {
-            alert('✅ ' + (res.data?.message || 'Migrations đã chạy thành công.'));
-        } else {
-            alert('❌ ' + (res.data?.message || 'Có lỗi xảy ra.'));
-        }
-    });
-});
+
 </script>

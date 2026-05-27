@@ -92,6 +92,27 @@ class TGS_Doc_Tracker_Upload
         $ext       = self::$allowed_mimes[$mime];
         $file_type = in_array($ext, ['xls', 'xlsx', 'csv']) ? 'excel' : (in_array($ext, ['pdf']) ? 'pdf' : 'image');
         $safe_name = sanitize_file_name($file['name']);
+
+        // Kiểm tra trùng: nếu file cùng tên và session đã tồn tại → trả về bản ghi cũ
+        $table  = TGS_Shop_Database::table('local_doc_tracker_session');
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT session_id, file_name, file_type, file_size
+             FROM `{$table}`
+             WHERE session_key = %s AND blog_id = %d AND file_name = %s AND committed = 0",
+            $session_key,
+            $blog_id,
+            $safe_name
+        ));
+        if ($existing) {
+            return [
+                'session_id' => (int) $existing->session_id,
+                'file_name'  => $existing->file_name,
+                'file_type'  => $existing->file_type,
+                'file_size'  => (int) $existing->file_size,
+                'duplicate'  => true,
+            ];
+        }
+
         $unique    = uniqid('doc_', true) . '_' . $safe_name;
         $tmp_dir   = self::get_tmp_dir($blog_id, $session_key);
         $dest      = $tmp_dir . $unique;
@@ -101,7 +122,6 @@ class TGS_Doc_Tracker_Upload
         }
 
         // Ghi vào bảng session
-        $table = TGS_Shop_Database::table('local_doc_tracker_session');
         $now   = current_time('mysql');
         $wpdb->insert($table, [
             'blog_id'     => $blog_id,

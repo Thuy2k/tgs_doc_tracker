@@ -189,6 +189,16 @@ class TGS_Doc_Tracker
     // ── Khi tạo phiếu thành công → commit files tạm + phát hiện lệch ──────
     public function on_ticket_created($ledger_id, $ticket_type, $extra_data = [])
     {
+        try {
+            $this->_process_ticket_created($ledger_id, $ticket_type, $extra_data);
+        } catch (\Throwable $e) {
+            // Log lỗi nhưng KHÔNG throw để không ảnh hưởng luồng tạo phiếu chính
+            error_log('[TGS_Doc_Tracker] on_ticket_created lỗi: ' . $e->getMessage() . ' | ledger_id=' . $ledger_id);
+        }
+    }
+
+    private function _process_ticket_created($ledger_id, $ticket_type, $extra_data = [])
+    {
         global $wpdb;
 
         // 1. Commit file chứng từ tạm thành vĩnh viễn
@@ -218,23 +228,27 @@ class TGS_Doc_Tracker
         // 3. Lấy SL thực tế đã lưu vào local_ledger_item, gộp theo product_id
         $item_table    = $wpdb->prefix . 'local_ledger_item';
         $product_table = $wpdb->prefix . 'local_product_name';
+        $product_ids   = array_keys($doc_qty_map);
 
-        $placeholder = implode(',', array_fill(0, count($doc_qty_map), '%d'));
-        $product_ids = array_keys($doc_qty_map);
+        // Với phiếu nhập hàng, các dòng sản phẩm nằm ở phiếu con (auto-import).
+        // Truyền child_ledger_id từ hook để truy vấn đúng phiếu.
+        $query_ledger_id = intval($extra_data['child_ledger_id'] ?? $ledger_id);
 
+        // Xây IN-clause an toàn (integer IDs, không cần prepare escape)
+        $in_ids  = implode(',', array_map('intval', $product_ids));
         // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT li.local_product_name_id AS product_id,
                     SUM(li.quantity)          AS actual_qty,
                     p.local_product_sku       AS sku,
                     p.local_product_name      AS product_name
-             FROM {$item_table} li
-             LEFT JOIN {$product_table} p ON p.local_product_name_id = li.local_product_name_id
+             FROM `{$item_table}` li
+             LEFT JOIN `{$product_table}` p ON p.local_product_name_id = li.local_product_name_id
              WHERE li.local_ledger_id = %d
-               AND li.local_product_name_id IN ($placeholder)
+               AND li.local_product_name_id IN ({$in_ids})
                AND (li.is_deleted = 0 OR li.is_deleted IS NULL)
              GROUP BY li.local_product_name_id",
-            array_merge([$ledger_id], $product_ids)
+            $query_ledger_id
         ));
         // phpcs:enable
 
