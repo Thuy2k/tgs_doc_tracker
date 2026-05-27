@@ -439,7 +439,7 @@
 
         // Xác nhận tiếp tục
         $(document).on('click', '#btnTgsDocConfirmSubmit', function () {
-            $('#tgsDocMismatchConfirmModal').modal('hide');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('tgsDocMismatchConfirmModal')).hide();
             _submitConfirmed = true;
             // Trigger lại click của nút submit gốc
             $('#btnTicketSubmit').trigger('click');
@@ -460,7 +460,7 @@
         }).join('');
 
         $('#tgsDocMismatchConfirmList').html(rows);
-        $('#tgsDocMismatchConfirmModal').modal('show');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('tgsDocMismatchConfirmModal')).show();
     }
 
     // ── 6. Hook form submit để gửi kèm software_source ─────────────────

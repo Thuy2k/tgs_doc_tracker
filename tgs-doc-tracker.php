@@ -143,25 +143,19 @@ class TGS_Doc_Tracker
         if (!in_array($ticket_type, $supported)) {
             return;
         }
-        wp_enqueue_style(
-            'tgs-doc-tracker',
-            TGS_DOC_TRACKER_URL . 'assets/css/doc-tracker.css',
-            [],
-            TGS_DOC_TRACKER_VERSION
-        );
-        wp_enqueue_script(
-            'tgs-doc-tracker',
-            TGS_DOC_TRACKER_URL . 'assets/js/doc-tracker-ticket.js',
-            ['jquery'],
-            TGS_DOC_TRACKER_VERSION,
-            true
-        );
-        wp_localize_script('tgs-doc-tracker', 'tgsDocTracker', [
+        // Dùng <link>/<script> trực tiếp vì main-layout.php không gọi wp_footer()
+        // nên wp_enqueue_script/style sẽ không được in ra DOM.
+        $css_url = esc_url(TGS_DOC_TRACKER_URL . 'assets/css/doc-tracker.css?v=' . TGS_DOC_TRACKER_VERSION);
+        $js_url  = esc_url(TGS_DOC_TRACKER_URL . 'assets/js/doc-tracker-ticket.js?v=' . TGS_DOC_TRACKER_VERSION);
+        $config  = [
             'ajaxUrl'    => admin_url('admin-ajax.php'),
             'nonce'      => wp_create_nonce('tgs_doc_tracker_nonce'),
             'blogId'     => get_current_blog_id(),
             'ticketType' => $ticket_type,
-        ]);
+        ];
+        echo '<link rel="stylesheet" href="' . $css_url . '">' . "\n";
+        echo '<script>var tgsDocTracker = ' . json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';</script>' . "\n";
+        echo '<script src="' . $js_url . '"></script>' . "\n";
     }
 
     // ── AJAX ─────────────────────────────────────────────────────────────
