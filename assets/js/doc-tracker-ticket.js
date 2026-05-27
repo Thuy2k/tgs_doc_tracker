@@ -30,6 +30,9 @@
         initFormSubmitHook();
         loadTempFiles();
         injectMismatchConfirmModal();
+
+        // Expose reload function cho các module khác (e.g. ticket-excel-import.js)
+        tgsDocTracker.reloadFiles = loadTempFiles;
     });
 
     // ── 1. Inject software source card ────────────────────────────────────

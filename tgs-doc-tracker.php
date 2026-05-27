@@ -182,12 +182,120 @@ class TGS_Doc_Tracker
         add_action('wp_ajax_tgs_doc_tracker_inventory_by_source', ['TGS_Doc_Tracker_Ajax', 'inventory_by_source']);
         // Kích hoạt chạy migrations thủ công (admin only)
         add_action('wp_ajax_tgs_doc_tracker_run_migrations', ['TGS_Doc_Tracker_Ajax', 'run_migrations_manual']);
+        // Lấy danh sách file chứng từ của một phiếu
+        add_action('wp_ajax_tgs_doc_tracker_get_ledger_files', ['TGS_Doc_Tracker_Ajax', 'get_ledger_files']);
     }
 
-    // ── Khi tạo phiếu thành công → commit files tạm ──────────────────────
+    // ── Khi tạo phiếu thành công → commit files tạm + phát hiện lệch ──────
     public function on_ticket_created($ledger_id, $ticket_type, $extra_data = [])
     {
+        global $wpdb;
+
+        // 1. Commit file chứng từ tạm thành vĩnh viễn
         TGS_Doc_Tracker_Upload::commit_temp_files($ledger_id, $ticket_type);
+
+        // 2. Phát hiện lệch số lượng giữa chứng từ và thực tế
+        $items = $extra_data['items'] ?? [];
+        if (empty($items) || !is_array($items)) {
+            return;
+        }
+
+        // Xây bảng product_id => doc_quantity (chỉ các item có doc_quantity > 0)
+        $doc_qty_map = [];
+        foreach ($items as $item) {
+            $product_id = intval($item['product_id'] ?? 0);
+            $doc_qty    = isset($item['doc_quantity']) ? floatval($item['doc_quantity']) : null;
+            if ($product_id > 0 && $doc_qty !== null && $doc_qty > 0) {
+                // Cộng dồn nếu cùng product_id (batch allocation chia ra nhiều dòng)
+                $doc_qty_map[$product_id] = ($doc_qty_map[$product_id] ?? 0) + $doc_qty;
+            }
+        }
+
+        if (empty($doc_qty_map)) {
+            return; // Không có SL chứng từ → bỏ qua
+        }
+
+        // 3. Lấy SL thực tế đã lưu vào local_ledger_item, gộp theo product_id
+        $item_table    = $wpdb->prefix . 'local_ledger_item';
+        $product_table = $wpdb->prefix . 'local_product_name';
+
+        $placeholder = implode(',', array_fill(0, count($doc_qty_map), '%d'));
+        $product_ids = array_keys($doc_qty_map);
+
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT li.local_product_name_id AS product_id,
+                    SUM(li.quantity)          AS actual_qty,
+                    p.local_product_sku       AS sku,
+                    p.local_product_name      AS product_name
+             FROM {$item_table} li
+             LEFT JOIN {$product_table} p ON p.local_product_name_id = li.local_product_name_id
+             WHERE li.local_ledger_id = %d
+               AND li.local_product_name_id IN ($placeholder)
+               AND (li.is_deleted = 0 OR li.is_deleted IS NULL)
+             GROUP BY li.local_product_name_id",
+            array_merge([$ledger_id], $product_ids)
+        ));
+        // phpcs:enable
+
+        if (empty($rows)) {
+            return;
+        }
+
+        // 4. So sánh và ghi lệch
+        $blog_id      = get_current_blog_id();
+        $ticket_code  = sanitize_text_field($extra_data['ticket_code'] ?? '');
+        $user_id      = intval($extra_data['user_id'] ?? get_current_user_id());
+        $now          = current_time('mysql');
+        $disc_table   = $wpdb->prefix . 'local_doc_tracker_discrepancy';
+
+        // Xây URL xem phiếu theo loại phiếu
+        $type_to_view = [
+            'purchase'               => 'ticket-purchase-detail',
+            'sale'                   => 'ticket-sale-detail',
+            'return'                 => 'ticket-return-detail',
+            'damage'                 => 'ticket-damage-detail',
+            'internal_export'        => 'ticket-transfer-export-detail',
+            'internal_purchase'      => 'ticket-transfer-import-detail',
+            'internal_return'        => 'ticket-internal-return-detail',
+            'internal_return_receive'=> 'ticket-internal-return-receive-detail',
+        ];
+        $detail_view = $type_to_view[$ticket_type] ?? null;
+        $ledger_url  = $detail_view
+            ? admin_url('admin.php?page=tgs-shop-management&view=' . $detail_view . '&id=' . $ledger_id)
+            : null;
+
+        foreach ($rows as $row) {
+            $product_id  = intval($row->product_id);
+            $actual_qty  = floatval($row->actual_qty);
+            $doc_qty     = floatval($doc_qty_map[$product_id]);
+            $qty_diff    = $doc_qty - $actual_qty;
+
+            if (abs($qty_diff) < 0.001) {
+                continue; // Không lệch → bỏ qua
+            }
+
+            $wpdb->insert($disc_table, [
+                'blog_id'                => $blog_id,
+                'local_ledger_id'        => $ledger_id,
+                'local_ledger_code'      => $ticket_code,
+                'local_product_sku'      => $row->sku ?? '',
+                'local_product_name_text'=> $row->product_name ?? '',
+                'discrepancy_type'       => 'qty',
+                'doc_quantity'           => $doc_qty,
+                'actual_quantity'        => $actual_qty,
+                'quantity_diff'          => $qty_diff,
+                'resolution_status'      => 'pending',
+                'discrepancy_meta'       => json_encode([
+                    'ticket_type' => $ticket_type,
+                    'ledger_url'  => $ledger_url,
+                ], JSON_UNESCAPED_UNICODE),
+                'user_id'                => $user_id,
+                'is_deleted'             => 0,
+                'created_at'             => $now,
+                'updated_at'             => $now,
+            ]);
+        }
     }
 }
 

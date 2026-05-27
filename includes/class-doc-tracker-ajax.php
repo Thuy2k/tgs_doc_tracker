@@ -316,6 +316,33 @@ class TGS_Doc_Tracker_Ajax
         wp_send_json_success(['rows' => $rows]);
     }
 
+    // ── Lấy file chứng từ đã commit của một phiếu ───────────────────────
+    public static function get_ledger_files()
+    {
+        self::check();
+
+        global $wpdb;
+
+        $blog_id   = get_current_blog_id();
+        $ledger_id = intval($_POST['ledger_id'] ?? 0);
+
+        if ($ledger_id <= 0) {
+            wp_send_json_error(['message' => 'ledger_id không hợp lệ.']);
+        }
+
+        $ledger_table = $wpdb->prefix . 'local_ledger';
+
+        $meta_json = $wpdb->get_var($wpdb->prepare(
+            "SELECT local_ledger_advance_meta FROM `{$ledger_table}` WHERE local_ledger_id = %d LIMIT 1",
+            $ledger_id
+        ));
+
+        $meta      = $meta_json ? json_decode($meta_json, true) : [];
+        $doc_files = $meta['doc_files'] ?? [];
+
+        wp_send_json_success(['files' => $doc_files]);
+    }
+
     // ── Kích hoạt migration thủ công (chỉ admin) ────────────────────────
     public static function run_migrations_manual()
     {

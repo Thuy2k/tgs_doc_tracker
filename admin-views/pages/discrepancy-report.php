@@ -166,6 +166,21 @@ $ajax_url = admin_url('admin-ajax.php');
     </div>
 </div>
 
+<!-- Modal xem file chứng từ của phiếu -->
+<div class="modal fade" id="discFilesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bx bx-file me-2"></i>File chứng từ — <span id="discFilesLedgerCode"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="discFilesBody">
+                <div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 (function ($) {
     var ajaxUrl = '<?php echo esc_js($ajax_url); ?>';
@@ -222,7 +237,15 @@ $ajax_url = admin_url('admin-ajax.php');
                 html += '<tr data-id="' + r.discrepancy_id + '">';
                 html += '<td class="text-center"><input type="checkbox" class="disc-row-check" value="' + r.discrepancy_id + '"></td>';
                 html += '<td>' + (page * pageLength + i + 1) + '</td>';
-                html += '<td><code>' + (r.local_ledger_code || '—') + '</code></td>';
+                // Mã phiếu: clickable link nếu có URL trong discrepancy_meta
+                var meta = {};
+                try { meta = JSON.parse(r.discrepancy_meta || '{}'); } catch(e) {}
+                var ledgerUrl = meta.ledger_url || null;
+                if (ledgerUrl) {
+                    html += '<td><a href="' + ledgerUrl + '" target="_blank"><code>' + (r.local_ledger_code || '—') + '</code> <i class="bx bx-link-external" style="font-size:11px;"></i></a></td>';
+                } else {
+                    html += '<td><code>' + (r.local_ledger_code || '—') + '</code></td>';
+                }
                 html += '<td><strong>' + (r.local_product_sku || '—') + '</strong></td>';
                 html += '<td class="text-truncate" style="max-width:180px;">' + (r.local_product_name_text || '—') + '</td>';
                 html += '<td>' + (typeLabels[r.discrepancy_type] || r.discrepancy_type) + '</td>';
@@ -232,12 +255,18 @@ $ajax_url = admin_url('admin-ajax.php');
                 html += '<td>' + (statusLabels[r.resolution_status] || r.resolution_status) + '</td>';
                 html += '<td>' + (r.created_at ? r.created_at.substr(0,10) : '—') + '</td>';
                 html += '<td>'
-                    + '<button type="button" class="btn btn-xs btn-outline-primary py-0 px-1 btnDiscEdit"'
+                    + '<button type="button" class="btn btn-xs btn-outline-primary py-0 px-1 btnDiscEdit me-1"'
                     + ' data-id="' + r.discrepancy_id + '"'
                     + ' data-status="' + r.resolution_status + '"'
                     + ' data-note="' + encodeURIComponent(r.resolution_note || '') + '"'
                     + ' data-method="' + encodeURIComponent(r.resolution_method || '') + '">'
-                    + '<i class="bx bx-edit-alt"></i></button></td>';
+                    + '<i class="bx bx-edit-alt"></i></button>'
+                    + '<button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1 btnViewFiles"'
+                    + ' data-ledger-id="' + r.local_ledger_id + '"'
+                    + ' data-ledger-code="' + (r.local_ledger_code || '') + '"'
+                    + ' title="Xem file chứng từ">'
+                    + '<i class="bx bx-file"></i></button>'
+                    + '</td>';
                 html += '</tr>';
             });
             if (!html) {
@@ -361,6 +390,53 @@ $ajax_url = admin_url('admin-ajax.php');
             $('#discUpdateModal').modal('hide');
             alert(res.success ? '✅ ' + res.data.message : '❌ ' + (res.data?.message || 'Lỗi'));
             if (res.success) loadData(currentPage);
+        });
+    });
+
+    // ── Xem file chứng từ của phiếu ────────────────────────────────────
+    $(document).on('click', '.btnViewFiles', function () {
+        var ledgerId   = $(this).data('ledger-id');
+        var ledgerCode = $(this).data('ledger-code') || ('Phiếu #' + ledgerId);
+        $('#discFilesLedgerCode').text(ledgerCode);
+        $('#discFilesBody').html('<div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>');
+        $('#discFilesModal').modal('show');
+        $.post(ajaxUrl, {
+            action:    'tgs_doc_tracker_get_ledger_files',
+            nonce:     nonce,
+            ledger_id: ledgerId,
+        }, function (res) {
+            if (!res.success) {
+                $('#discFilesBody').html('<div class="alert alert-danger">' + (res.data?.message || 'Không thể tải file.') + '</div>');
+                return;
+            }
+            var files = res.data.files || [];
+            if (!files.length) {
+                $('#discFilesBody').html('<div class="text-center py-4 text-muted">Phiếu này chưa có file chứng từ nào.</div>');
+                return;
+            }
+            var html = '<div class="row g-2">';
+            $.each(files, function (i, f) {
+                var name = f.original_name || f.file_name || ('File ' + (i + 1));
+                var url  = f.url || f.file_url || '';
+                var ext  = name.split('.').pop().toLowerCase();
+                var isImg = ['jpg','jpeg','png','gif','webp','bmp'].indexOf(ext) >= 0;
+                html += '<div class="col-6 col-md-4">';
+                if (isImg && url) {
+                    html += '<a href="' + url + '" target="_blank">'
+                          + '<img src="' + url + '" class="img-fluid rounded border" style="max-height:160px;object-fit:cover;width:100%;" alt="' + name + '">'
+                          + '</a>';
+                } else {
+                    html += '<a href="' + url + '" target="_blank" class="d-flex align-items-center gap-2 p-2 border rounded text-decoration-none">'
+                          + '<i class="bx bx-file fs-4 text-primary"></i>'
+                          + '<span class="text-truncate small">' + name + '</span>'
+                          + '</a>';
+                }
+                html += '<div class="text-muted small mt-1 text-truncate">' + name + '</div></div>';
+            });
+            html += '</div>';
+            $('#discFilesBody').html(html);
+        }).fail(function () {
+            $('#discFilesBody').html('<div class="alert alert-danger">Lỗi kết nối.</div>');
         });
     });
 

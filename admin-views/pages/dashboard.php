@@ -133,12 +133,26 @@ $base_url = 'admin.php?page=tgs-shop-management&view=';
                                 <th>SL thực tế</th>
                                 <th>Lệch</th>
                                 <th>Ngày</th>
+                                <th>File</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($recent as $r): ?>
+                                <?php
+                                $disc_meta  = $r->discrepancy_meta ? json_decode($r->discrepancy_meta, true) : [];
+                                $ledger_url = $disc_meta['ledger_url'] ?? null;
+                                ?>
                                 <tr>
-                                    <td><code><?php echo esc_html($r->local_ledger_code); ?></code></td>
+                                    <td>
+                                        <?php if ($ledger_url): ?>
+                                            <a href="<?php echo esc_url($ledger_url); ?>" target="_blank">
+                                                <code><?php echo esc_html($r->local_ledger_code); ?></code>
+                                                <i class="bx bx-link-external" style="font-size:11px;"></i>
+                                            </a>
+                                        <?php else: ?>
+                                            <code><?php echo esc_html($r->local_ledger_code); ?></code>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><strong><?php echo esc_html($r->local_product_sku); ?></strong></td>
                                     <td>
                                         <?php
@@ -158,6 +172,15 @@ $base_url = 'admin.php?page=tgs-shop-management&view=';
                                         <?php echo is_null($r->quantity_diff) ? '—' : (($r->quantity_diff > 0 ? '+' : '') . number_format($r->quantity_diff, 1)); ?>
                                     </td>
                                     <td><?php echo date('d/m/Y', strtotime($r->created_at)); ?></td>
+                                    <td>
+                                        <button type="button"
+                                            class="btn btn-xs btn-outline-secondary py-0 px-1 btnDashViewFiles"
+                                            data-ledger-id="<?php echo intval($r->local_ledger_id); ?>"
+                                            data-ledger-code="<?php echo esc_attr($r->local_ledger_code); ?>"
+                                            title="Xem file chứng từ">
+                                            <i class="bx bx-file"></i>
+                                        </button>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -168,7 +191,74 @@ $base_url = 'admin.php?page=tgs-shop-management&view=';
     </div>
 </div>
 
+<!-- Modal xem file chứng từ (Dashboard) -->
+<div class="modal fade" id="dashFilesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bx bx-file me-2"></i>File chứng từ — <span id="dashFilesLedgerCode"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="dashFilesBody">
+                <div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+(function ($) {
+    var ajaxUrl = (typeof tgsDocTracker !== 'undefined' && tgsDocTracker.ajaxUrl) ? tgsDocTracker.ajaxUrl : ajaxurl;
+    var nonce   = (typeof tgsDocTracker !== 'undefined' && tgsDocTracker.nonce)   ? tgsDocTracker.nonce   : '';
+
+    // ── Xem file chứng từ ────────────────────────────────────────────────
+    $(document).on('click', '.btnDashViewFiles', function () {
+        var ledgerId   = $(this).data('ledger-id');
+        var ledgerCode = $(this).data('ledger-code') || ('Phiếu #' + ledgerId);
+        $('#dashFilesLedgerCode').text(ledgerCode);
+        $('#dashFilesBody').html('<div class="text-center py-4 text-muted"><i class="bx bx-loader-circle bx-spin me-1"></i> Đang tải...</div>');
+        $('#dashFilesModal').modal('show');
+        $.post(ajaxUrl, {
+            action:    'tgs_doc_tracker_get_ledger_files',
+            nonce:     nonce,
+            ledger_id: ledgerId,
+        }, function (res) {
+            if (!res.success) {
+                $('#dashFilesBody').html('<div class="alert alert-danger">' + (res.data?.message || 'Không thể tải file.') + '</div>');
+                return;
+            }
+            var files = res.data.files || [];
+            if (!files.length) {
+                $('#dashFilesBody').html('<div class="text-center py-4 text-muted">Phiếu này chưa có file chứng từ nào.</div>');
+                return;
+            }
+            var html = '<div class="row g-2">';
+            $.each(files, function (i, f) {
+                var name = f.original_name || f.file_name || ('File ' + (i + 1));
+                var url  = f.url || f.file_url || '';
+                var ext  = name.split('.').pop().toLowerCase();
+                var isImg = ['jpg','jpeg','png','gif','webp','bmp'].indexOf(ext) >= 0;
+                html += '<div class="col-6 col-md-4">';
+                if (isImg && url) {
+                    html += '<a href="' + url + '" target="_blank">'
+                          + '<img src="' + url + '" class="img-fluid rounded border" style="max-height:160px;object-fit:cover;width:100%;" alt="' + name + '">'
+                          + '</a>';
+                } else {
+                    html += '<a href="' + url + '" target="_blank" class="d-flex align-items-center gap-2 p-2 border rounded text-decoration-none">'
+                          + '<i class="bx bx-file fs-4 text-primary"></i>'
+                          + '<span class="text-truncate small">' + name + '</span>'
+                          + '</a>';
+                }
+                html += '<div class="text-muted small mt-1 text-truncate">' + name + '</div></div>';
+            });
+            html += '</div>';
+            $('#dashFilesBody').html(html);
+        }).fail(function () {
+            $('#dashFilesBody').html('<div class="alert alert-danger">Lỗi kết nối.</div>');
+        });
+    });
+})(jQuery);
+
 document.getElementById('btnRunMigrationsManual')?.addEventListener('click', function () {
     if (!confirm('Chạy migration sẽ thêm các cột mới vào database. Tiếp tục?')) return;
     this.disabled = true;
