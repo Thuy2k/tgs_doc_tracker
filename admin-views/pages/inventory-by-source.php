@@ -41,6 +41,7 @@ $nonce    = wp_create_nonce('tgs_doc_tracker_nonce');
                         <option value="root">Hệ thống mình (root)</option>
                         <option value="htsoft">HTSoft</option>
                         <option value="thu_kho">Thủ kho</option>
+                        <option value="chung_tu">Chứng từ</option>
                     </select>
                 </div>
                 <div class="col-md-2">

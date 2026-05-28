@@ -6,11 +6,12 @@
  * Hiển thị như 1 card nằm ngay trước khối "Cài đặt nhanh" (inject bằng JS sau DOM ready).
  *
  * Các lựa chọn:
- *   null / không chọn → chỉ hệ thống mình (root)
- *   ["root","htsoft"] → htsoft và mình (mặc định)
+ *   null / không chọn → mặc định (hệ thống mình)
+ *   ["thu_kho"]       → thủ kho gửi  (MẶC ĐỊNH)
+ *   ["root","htsoft"] → htsoft và mình
  *   ["htsoft"]        → chỉ HTSoft
  *   ["root"]          → chỉ hệ thống mình
- *   ["thu_kho"]       → thủ kho gửi
+ *   ["chung_tu"]      → chỉ chứng từ
  *
  * @package tgs_doc_tracker
  */
@@ -37,14 +38,15 @@ if (!defined('ABSPATH')) {
                        data-bs-toggle="tooltip"></i>
                 </label>
                 <select class="form-select" id="tgs_ledger_software_source" name="tgs_ledger_software_source">
-                    <option value='["root","htsoft"]' selected>HTSoft và hệ thống mình</option>
+                    <option value='["thu_kho"]' selected>Thủ kho gửi</option>
+                    <option value='["root","htsoft"]'>HTSoft và hệ thống mình</option>
                     <option value='["root"]'>Chỉ hệ thống mình</option>
                     <option value='["htsoft"]'>Chỉ HTSoft</option>
-                    <option value='["thu_kho"]'>Thủ kho gửi</option>
+                    <option value='["chung_tu"]'>Chỉ chứng từ</option>
                     <option value="null">Mặc định (hệ thống mình)</option>
                 </select>
                 <div class="form-text text-muted">
-                    Để thống kê phiếu từ hệ thống mình: chọn <em>"Chỉ hệ thống mình"</em> hoặc <em>"Mặc định"</em>.
+                    Ưu tiên <em>"Thủ kho gửi"</em> khi phiếu xuất phát từ thủ kho. Để thống kê phiếu hệ thống mình: chọn <em>"Chỉ hệ thống mình"</em> hoặc <em>"Mặc định"</em>.
                 </div>
             </div>
 
@@ -74,4 +76,4 @@ if (!defined('ABSPATH')) {
 </div>
 
 <!-- Hidden input để gửi kèm form phiếu -->
-<input type="hidden" name="ledger_software_source" id="tgsHiddenSoftwareSource" value='["root","htsoft"]'>
+<input type="hidden" name="ledger_software_source" id="tgsHiddenSoftwareSource" value='["thu_kho"]'>

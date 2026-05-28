@@ -295,6 +295,9 @@ class TGS_Doc_Tracker_Ajax
         } elseif ($source === 'thu_kho') {
             $where[]  = "$src_expr LIKE %s";
             $params[] = '%thu_kho%';
+        } elseif ($source === 'chung_tu') {
+            $where[]  = "$src_expr LIKE %s";
+            $params[] = '%chung_tu%';
         }
 
         $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
