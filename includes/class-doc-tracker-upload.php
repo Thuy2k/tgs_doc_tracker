@@ -27,6 +27,49 @@ class TGS_Doc_Tracker_Upload
         'text/csv'                                                    => 'csv',
     ];
 
+    // ── Phát hiện MIME (an toàn cả khi server không có extension fileinfo) ───
+    private static function detect_mime($tmp_path, $original_name = '')
+    {
+        // 1) fileinfo (chuẩn nhất nếu có)
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo) {
+                $m = finfo_file($finfo, $tmp_path);
+                finfo_close($finfo);
+                if ($m && isset(self::$allowed_mimes[$m])) return $m;
+            }
+        }
+        // 2) mime_content_type (php-magic)
+        if (function_exists('mime_content_type')) {
+            $m = @mime_content_type($tmp_path);
+            if ($m && isset(self::$allowed_mimes[$m])) return $m;
+        }
+        // 3) Suy theo đuôi file — vì whitelist đã giới hạn loại nên vẫn an toàn.
+        if ($original_name) {
+            $ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+            $ext_to_mime = [
+                'jpg'  => 'image/jpeg',
+                'jpeg' => 'image/jpeg',
+                'png'  => 'image/png',
+                'gif'  => 'image/gif',
+                'webp' => 'image/webp',
+                'pdf'  => 'application/pdf',
+                'xls'  => 'application/vnd.ms-excel',
+                'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'csv'  => 'text/csv',
+            ];
+            if (isset($ext_to_mime[$ext])) {
+                return $ext_to_mime[$ext];
+            }
+            // Cuối cùng dùng map của WP (nếu có khớp với whitelist)
+            $check = wp_check_filetype($original_name);
+            if (!empty($check['type']) && isset(self::$allowed_mimes[$check['type']])) {
+                return $check['type'];
+            }
+        }
+        return '';
+    }
+
     // ── Lấy thư mục tmp ──────────────────────────────────────────────────
     private static function get_tmp_dir($blog_id, $session_key)
     {
@@ -75,13 +118,11 @@ class TGS_Doc_Tracker_Upload
         $blog_id  = get_current_blog_id();
         $user_id  = get_current_user_id();
 
-        // Validate mime
-        $finfo    = finfo_open(FILEINFO_MIME_TYPE);
-        $mime     = finfo_file($finfo, $file['tmp_name']);
-        finfo_close($finfo);
+        // Validate mime — fallback nếu PHP extension `fileinfo` chưa enable trên server.
+        $mime = self::detect_mime($file['tmp_name'], $file['name']);
 
-        if (!isset(self::$allowed_mimes[$mime])) {
-            return new WP_Error('invalid_mime', 'Loại file không được phép: ' . esc_html($mime));
+        if (!$mime || !isset(self::$allowed_mimes[$mime])) {
+            return new WP_Error('invalid_mime', 'Loại file không được phép: ' . esc_html((string) $mime));
         }
 
         // Kiểm tra kích thước (max 20MB)
