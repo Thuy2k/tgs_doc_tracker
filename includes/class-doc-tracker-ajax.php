@@ -432,6 +432,75 @@ class TGS_Doc_Tracker_Ajax
         wp_send_json_success(['files' => $doc_files]);
     }
 
+    // ── Stream file chứng từ với Content-Disposition: attachment ────────
+    // GET endpoint: admin-ajax.php?action=tgs_doc_tracker_download_file
+    //              &_wpnonce=...&ledger_id=...&idx=N
+    // Mục đích: ép trình duyệt tải về thay vì mở (kể cả xls/pdf/csv) bất kể
+    // header Apache/Nginx mặc định gửi cho thư mục /wp-content/uploads.
+    public static function download_file()
+    {
+        // Nonce qua GET để đặt trực tiếp vào URL <a href>
+        if (!isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'tgs_doc_tracker_nonce')) {
+            wp_die('Nonce không hợp lệ.', 'Forbidden', ['response' => 403]);
+        }
+        if (!current_user_can('read')) {
+            wp_die('Không có quyền.', 'Forbidden', ['response' => 403]);
+        }
+
+        global $wpdb;
+        $ledger_id = intval($_GET['ledger_id'] ?? 0);
+        $idx       = intval($_GET['idx'] ?? -1);
+        if ($ledger_id <= 0 || $idx < 0) {
+            wp_die('Tham số không hợp lệ.', 'Bad Request', ['response' => 400]);
+        }
+
+        $ledger_table = $wpdb->prefix . 'local_ledger';
+        $meta_json = $wpdb->get_var($wpdb->prepare(
+            "SELECT local_ledger_advance_meta FROM `{$ledger_table}` WHERE local_ledger_id = %d LIMIT 1",
+            $ledger_id
+        ));
+        $meta      = $meta_json ? json_decode($meta_json, true) : [];
+        $doc_files = $meta['doc_files'] ?? [];
+        if (!isset($doc_files[$idx]) || !is_array($doc_files[$idx])) {
+            wp_die('File không tồn tại.', 'Not Found', ['response' => 404]);
+        }
+
+        $entry = $doc_files[$idx];
+        $url   = $entry['file_url'] ?? ($entry['url'] ?? '');
+        $name  = $entry['original_name'] ?? ($entry['file_name'] ?? basename(parse_url($url, PHP_URL_PATH) ?: 'download'));
+
+        // Map URL → đường dẫn vật lý, chống path traversal: phải nằm trong uploads basedir.
+        $upload_dir = wp_upload_dir();
+        $basedir    = realpath($upload_dir['basedir']);
+        $baseurl    = $upload_dir['baseurl'];
+
+        $path = '';
+        if ($url && strpos($url, $baseurl) === 0) {
+            $rel  = ltrim(substr($url, strlen($baseurl)), '/');
+            $path = $basedir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+        } elseif (!empty($entry['file_path'])) {
+            $path = $entry['file_path'];
+        }
+
+        $real = $path ? realpath($path) : false;
+        if (!$real || strpos($real, $basedir) !== 0 || !is_file($real)) {
+            wp_die('File không tồn tại trên đĩa.', 'Not Found', ['response' => 404]);
+        }
+
+        // Stream xuống browser
+        nocache_headers();
+        $safe_name = preg_replace('/[\r\n"]/', '_', $name);
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="' . $safe_name . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+        header('Content-Length: ' . filesize($real));
+        header('X-Content-Type-Options: nosniff');
+
+        // Tắt output buffering để stream
+        while (ob_get_level() > 0) { ob_end_clean(); }
+        readfile($real);
+        exit;
+    }
+
     // ── Kích hoạt migration thủ công (chỉ admin) ────────────────────────
     public static function run_migrations_manual()
     {

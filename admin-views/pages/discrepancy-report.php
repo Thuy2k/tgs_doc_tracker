@@ -424,14 +424,21 @@ $ajax_url = admin_url('admin-ajax.php');
                 var url  = f.url || f.file_url || '';
                 var ext  = name.split('.').pop().toLowerCase();
                 var isImg = ['jpg','jpeg','png','gif','webp','bmp'].indexOf(ext) >= 0;
+                // URL stream qua endpoint server → ép Content-Disposition: attachment
+                var dlUrl = ajaxUrl
+                          + '?action=tgs_doc_tracker_download_file'
+                          + '&_wpnonce=' + encodeURIComponent(nonce)
+                          + '&ledger_id=' + encodeURIComponent(ledgerId)
+                          + '&idx=' + i;
                 html += '<div class="col-6 col-md-4">';
                 if (isImg && url) {
                     html += '<a href="' + url + '" target="_blank">'
                           + '<img src="' + url + '" class="img-fluid rounded border" style="max-height:160px;object-fit:cover;width:100%;" alt="' + name + '">'
-                          + '</a>';
+                          + '</a>'
+                          + '<a href="' + dlUrl + '" class="btn btn-sm btn-outline-primary w-100 mt-1"><i class="bx bx-download"></i> Tải</a>';
                 } else {
-                    html += '<a href="' + url + '" target="_blank" class="d-flex align-items-center gap-2 p-2 border rounded text-decoration-none">'
-                          + '<i class="bx bx-file fs-4 text-primary"></i>'
+                    html += '<a href="' + dlUrl + '" class="d-flex align-items-center gap-2 p-2 border rounded text-decoration-none">'
+                          + '<i class="bx bx-download fs-4 text-primary"></i>'
                           + '<span class="text-truncate small">' + name + '</span>'
                           + '</a>';
                 }

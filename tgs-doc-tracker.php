@@ -178,6 +178,8 @@ class TGS_Doc_Tracker
         add_action('wp_ajax_tgs_doc_tracker_run_migrations', ['TGS_Doc_Tracker_Ajax', 'run_migrations_manual']);
         // Lấy danh sách file chứng từ của một phiếu
         add_action('wp_ajax_tgs_doc_tracker_get_ledger_files', ['TGS_Doc_Tracker_Ajax', 'get_ledger_files']);
+        // Stream tải file chứng từ (force Content-Disposition: attachment)
+        add_action('wp_ajax_tgs_doc_tracker_download_file', ['TGS_Doc_Tracker_Ajax', 'download_file']);
     }
 
     // ── Khi tạo phiếu thành công → commit files tạm + phát hiện lệch ──────
