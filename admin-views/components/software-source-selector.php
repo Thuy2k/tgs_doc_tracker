@@ -38,15 +38,15 @@ if (!defined('ABSPATH')) {
                        data-bs-toggle="tooltip"></i>
                 </label>
                 <select class="form-select" id="tgs_ledger_software_source" name="tgs_ledger_software_source">
-                    <option value='["thu_kho"]' selected>Thủ kho gửi</option>
+                    <option value='["thu_kho"]'>Thủ kho gửi</option>
                     <option value='["root","htsoft"]'>HTSoft và hệ thống mình</option>
-                    <option value='["root"]'>Chỉ hệ thống mình</option>
+                    <option value='["root"]' selected>Chỉ hệ thống mình</option>
                     <option value='["htsoft"]'>Chỉ HTSoft</option>
                     <option value='["chung_tu"]'>Chỉ chứng từ</option>
                     <option value="null">Mặc định (hệ thống mình)</option>
                 </select>
                 <div class="form-text text-muted">
-                    Ưu tiên <em>"Thủ kho gửi"</em> khi phiếu xuất phát từ thủ kho. Để thống kê phiếu hệ thống mình: chọn <em>"Chỉ hệ thống mình"</em> hoặc <em>"Mặc định"</em>.
+                    Mặc định <em>"Chỉ hệ thống mình"</em>. Chọn <em>"Thủ kho gửi"</em> khi phiếu xuất phát từ thủ kho; chọn <em>"HTSoft và hệ thống mình"</em> khi cần ghi nhận cả 2 nguồn.
                 </div>
             </div>
 
