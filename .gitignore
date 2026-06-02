@@ -1,0 +1,7 @@
+# Local-only docs and assistant instructions
+.github/copilot-instructions.md
+docs/
+
+# Optional local assistant tooling
+.claude/
+.catlas/

@@ -128,7 +128,7 @@ class TGS_Doc_Tracker
     public function inject_ticket_modals($ticket_type)
     {
         // Các loại phiếu được hỗ trợ
-        $supported = ['purchase', 'sale', 'return', 'damage', 'internal_export', 'internal_import'];
+        $supported = ['purchase', 'sale', 'return', 'supplier_return', 'damage', 'internal_export', 'internal_import'];
         if (!in_array($ticket_type, $supported)) {
             return;
         }
@@ -139,7 +139,7 @@ class TGS_Doc_Tracker
     // ── Inject JS/CSS vào ticket create ─────────────────────────────────
     public function inject_ticket_scripts($ticket_type)
     {
-        $supported = ['purchase', 'sale', 'return', 'damage', 'internal_export', 'internal_import'];
+        $supported = ['purchase', 'sale', 'return', 'supplier_return', 'damage', 'internal_export', 'internal_import'];
         if (!in_array($ticket_type, $supported)) {
             return;
         }
