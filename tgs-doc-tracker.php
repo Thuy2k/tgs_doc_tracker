@@ -75,6 +75,7 @@ class TGS_Doc_Tracker
     private function load_includes()
     {
 
+        require_once TGS_DOC_TRACKER_DIR . 'includes/class-doc-tracker-global-products.php';
         require_once TGS_DOC_TRACKER_DIR . 'includes/class-doc-tracker-upload.php';
         require_once TGS_DOC_TRACKER_DIR . 'includes/class-doc-tracker-ajax.php';
     }
@@ -285,7 +286,6 @@ class TGS_Doc_Tracker
 
         // Lấy SL thực tế đã lưu vào local_ledger_item, gộp theo product_id
         $item_table    = $wpdb->prefix . 'local_ledger_item';
-        $product_table = $wpdb->prefix . 'local_product_name';
         $product_ids   = array_keys($doc_qty_map);
 
         // Xây IN-clause an toàn (integer IDs, không cần prepare escape)
@@ -294,10 +294,8 @@ class TGS_Doc_Tracker
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT li.local_product_name_id AS product_id,
                     SUM(li.quantity)          AS actual_qty,
-                    p.local_product_sku       AS sku,
-                    p.local_product_name      AS product_name
+                    MAX(TRIM(li.local_product_sku)) AS sku
              FROM `{$item_table}` li
-             LEFT JOIN `{$product_table}` p ON p.local_product_name_id = li.local_product_name_id
              WHERE li.local_ledger_id = %d
                AND li.local_product_name_id IN ({$in_ids})
                AND (li.is_deleted = 0 OR li.is_deleted IS NULL)
@@ -310,6 +308,13 @@ class TGS_Doc_Tracker
             return;
         }
 
+        $products_by_id = TGS_Doc_Tracker_Global_Products::products_by_ids(array_map(static function ($row) {
+            return (int) ($row->product_id ?? 0);
+        }, (array) $rows));
+        $products_by_sku = TGS_Doc_Tracker_Global_Products::products_by_skus(array_map(static function ($row) {
+            return (string) ($row->sku ?? '');
+        }, (array) $rows));
+
         foreach ($rows as $row) {
             $product_id  = intval($row->product_id);
             $actual_qty  = floatval($row->actual_qty);
@@ -320,9 +325,18 @@ class TGS_Doc_Tracker
                 continue; // Không lệch → bỏ qua
             }
 
+            $sku = trim((string) ($row->sku ?? ''));
+            $product = $products_by_id[$product_id] ?? null;
+            if (!$product && $sku !== '') {
+                $product = $products_by_sku[$sku] ?? ($products_by_sku[strtoupper($sku)] ?? null);
+            }
+            $product = $product ? (array) $product : [];
+            $sku = $sku !== '' ? $sku : TGS_Doc_Tracker_Global_Products::sku($product);
+            $product_name = TGS_Doc_Tracker_Global_Products::name($product, $sku);
+
             $this->_insert_discrepancy($ctx, [
-                'sku'              => $row->sku ?? '',
-                'product_name'     => $row->product_name ?? '',
+                'sku'              => $sku,
+                'product_name'     => $product_name,
                 'discrepancy_type' => 'qty',
                 'doc_quantity'     => $doc_qty,
                 'actual_quantity'  => $actual_qty,
@@ -382,24 +396,28 @@ class TGS_Doc_Tracker
 
         // Lấy danh sách SKU + tên + SL thực tế đã lưu vào phiếu (gộp nếu SKU lặp ở nhiều dòng/lô)
         $item_table    = $wpdb->prefix . 'local_ledger_item';
-        $product_table = $wpdb->prefix . 'local_product_name';
         $rows_actual = $wpdb->get_results($wpdb->prepare(
-            "SELECT p.local_product_sku   AS sku,
-                    p.local_product_name  AS product_name,
-                    SUM(li.quantity)      AS actual_qty
+            "SELECT TRIM(li.local_product_sku) AS sku,
+                    SUM(li.quantity) AS actual_qty
              FROM `{$item_table}` li
-             LEFT JOIN `{$product_table}` p ON p.local_product_name_id = li.local_product_name_id
              WHERE li.local_ledger_id = %d
+               AND li.local_product_sku IS NOT NULL
+               AND TRIM(li.local_product_sku) <> ''
                AND (li.is_deleted = 0 OR li.is_deleted IS NULL)
-             GROUP BY p.local_product_sku, p.local_product_name",
+             GROUP BY TRIM(li.local_product_sku)",
             $ctx['query_ledger_id']
         ));
+        $products_by_sku = TGS_Doc_Tracker_Global_Products::products_by_skus(array_map(static function ($row) {
+            return (string) ($row->sku ?? '');
+        }, (array) $rows_actual));
+
         $present_map = []; // sku => { name, qty }
         foreach ($rows_actual as $r) {
             $s = trim((string)($r->sku ?? ''));
             if ($s === '') continue;
+            $product = $products_by_sku[$s] ?? ($products_by_sku[strtoupper($s)] ?? []);
             $present_map[$s] = [
-                'name' => (string)($r->product_name ?? ''),
+                'name' => TGS_Doc_Tracker_Global_Products::name((array) $product, $s),
                 'qty'  => floatval($r->actual_qty),
             ];
         }
