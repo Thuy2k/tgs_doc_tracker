@@ -200,6 +200,11 @@
 
     // ── 3. Fill doc_quantity vào cột SL chứng từ ─────────────────────────
     function initDocQtyColumnFill() {
+        // Phiếu mua hàng (purchase) đã bỏ cột "SL chứng từ" ở header → không inject cell.
+        if (TICKET_TYPE === 'purchase') {
+            return;
+        }
+
         // Lắng nghe event tgs_excel_fill / tgs_ai_fill từ các plugin khác
         $(document).on('tgs_product_row_filled', function (e, data) {
             /**
@@ -258,6 +263,9 @@
 
     // Đảm bảo mỗi dòng sản phẩm có ô SL chứng từ
     function ensureDocQtyCell(tr) {
+        // Phiếu mua hàng (purchase) đã bỏ cột "SL chứng từ" ở header → không inject cell.
+        if (TICKET_TYPE === 'purchase') return;
+
         var $tr = $(tr);
         if ($tr.find('.tgs-doc-qty-cell').length) return;
 
