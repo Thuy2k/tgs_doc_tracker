@@ -269,6 +269,32 @@
         var $tr = $(tr);
         if ($tr.find('.tgs-doc-qty-cell').length) return;
 
+        /*
+         * ─── CHỈ CHÈN Ô KHI HEADER CÒN CỘT TƯƠNG ỨNG ────────────────────────
+         *
+         * Plugin chính đã bỏ cột "SL chứng từ" khỏi <thead> của bảng sản phẩm
+         * (ticket_product_list.php) và chuyển giá trị vào một input ẩn
+         * .tgs-doc-qty-input nằm sẵn trong ô "SL cuối".
+         *
+         * Chèn thêm <td> ở đây làm dòng dữ liệu THỪA MỘT Ô so với header — 20
+         * ô body so với 19 ô header — nên toàn bộ cột từ đó trở đi lệch sang
+         * phải một nhịp: đơn giá rơi vào cột "SL tồn", tồn kho rơi vào "TT
+         * không VAT", ba ô nhập CK/Thuế lệch hết sang cột bên cạnh. Người dùng
+         * nhìn vào tưởng số liệu sai.
+         *
+         * Kiểm theo HEADER chứ không hard-code theo loại phiếu: mai kia cột đó
+         * được trả lại thì việc chèn tự chạy lại, không phải sửa chỗ này.
+         *
+         * Mọi hàm khác của module đều thao tác trên .tgs-doc-qty-input chứ
+         * không cần ô <td> này, nên bỏ chèn không ảnh hưởng gì.
+         */
+        if ($tr.find('.tgs-doc-qty-input').length) return;
+
+        var hasDocHeader = $tr.closest('table').find('thead th').filter(function () {
+            return /SL\s*ch[uứ]ng\s*t[uừ]/i.test($(this).text());
+        }).length > 0;
+        if (!hasDocHeader) return;
+
         // Tìm ô "Tồn kho" để insert sau
         var $stockCell = $tr.find('td.tgs-stock-cell, td[data-col="stock"]');
         if (!$stockCell.length) {
