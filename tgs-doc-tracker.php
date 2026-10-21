@@ -220,10 +220,6 @@ class TGS_Doc_Tracker
             'sale'                   => 'ticket-sale-detail',
             'return'                 => 'ticket-return-detail',
             'damage'                 => 'ticket-damage-detail',
-            'internal_export'        => 'ticket-transfer-export-detail',
-            'internal_purchase'      => 'ticket-transfer-import-detail',
-            'internal_return'        => 'ticket-internal-return-detail',
-            'internal_return_receive'=> 'ticket-internal-return-receive-detail',
         ]);
         $detail_view = $type_to_view[$ticket_type] ?? null;
         $ledger_url  = $detail_view
